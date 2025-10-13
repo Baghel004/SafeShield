@@ -1,0 +1,27 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.12.2",
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "express": "^5.1.0",
+    "form-data": "^4.0.4",
+    "fs": "^0.0.1-security",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
+    "nodemon": "^3.1.10",
+    "path": "^0.12.7",
+    "undici": "^7.16.0"
+  }
+}
