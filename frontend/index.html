@@ -9,7 +9,6 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="script.css">
   <style>
-    /* small inline tweak so the QA card looks good */
     .doc-answer { text-align:left; max-width:900px; margin:0 auto; }
     .doc-file-input { width:100%; }
     .doc-upload-btn { padding: .5rem 1rem; }
@@ -20,33 +19,59 @@
 <body>
 
 <!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top shadow-sm">
   <div class="container">
-    <a class="navbar-brand" href="#">SafeShield</a>
+    <a class="navbar-brand d-flex align-items-center" href="#">
+      <img src="assests/secure-processing-shield.png" alt="SafeShield Logo" 
+           class="img-fluid me-2" 
+           style="height: 40px; width: auto;">
+      <span class="fw-bold">SafeShield</span>
+    </a>
+
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
       <span class="navbar-toggler-icon"></span>
     </button>
+
     <div class="collapse navbar-collapse" id="navbarNav">
-      <ul class="navbar-nav ms-auto">
+      <ul class="navbar-nav ms-auto align-items-lg-center">
+        <li class="nav-item"><a class="nav-link" href="#about">About Us</a></li>
         <li class="nav-item"><a class="nav-link" href="#services">Services</a></li>
         <li class="nav-item"><a class="nav-link" href="#benefits">Benefits</a></li>
-        <li class="nav-item"><a class="nav-link" href="#about">About Us</a></li>
+        <li class="nav-item"><a class="nav-link" href="#faq">FAQ</a></li>
+        <li class="nav-item"><a class="nav-link" href="#how-it-works" style="color: #0095f9 !important;">Working</a></li>
+        <li class="nav-item"><a class="nav-link" href="#compare">Plans</a></li>
         <li class="nav-item"><a class="nav-link" href="#contact">Contact</a></li>
-        <li class="nav-item">
-          <button class="btn btn-outline-light ms-2" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
+        <li class="nav-item mt-2 mt-lg-0">
+          <button class="btn btn-outline-light ms-lg-2" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
         </li>
-        <li class="nav-item">
-          <button class="btn btn-outline-light ms-2" data-bs-toggle="modal" data-bs-target="#signupModal">Sign Up</button>
+        <li class="nav-item mt-2 mt-lg-0">
+          <button class="btn btn-outline-light ms-lg-2" data-bs-toggle="modal" data-bs-target="#signupModal">Sign Up</button>
         </li>
       </ul>
     </div>
   </div>
 </nav>
 
-<section class="hero text-center py-7 px-3" style="padding-top:100px">
-  <h1 class="mb-3"><span id="typed"></span></h1>
-</section>
 
+  <section class="hero text-center py-7 px-3" style="padding-top:100px">
+    <div class="container">
+      <div class="badge-custom">
+        <i class="bi bi-stars"></i> AI-Powered Insurance Assistant
+      </div>
+
+      <h1><span id="typed"></span></h1>
+
+      <p>Query multiple insurance datasets instantly, get personalized policy recommendations, 
+         and upload your documents for AI-powered insights—all in one intelligent platform.</p>
+
+      <div class="d-flex flex-wrap justify-content-center gap-3">
+        <a href="#services" class="btn btn-outline-dark">Explore Features</a>
+      </div>
+    </div>
+  </section>
+
+
+  
 <!-- Carousel -->
 <div class="carousel-wrap">
   <div class="carousel" id="carousel">
@@ -60,7 +85,7 @@
       </div>
 
       <div class="slide">
-        <img src="assests/Life.jpeg" alt="Life Protection" loading="lazy">
+        <img src="assests/Life.jpg" alt="Life Protection" loading="lazy">
         <div class="slide-text">
           <h2>Life Protection</h2>
           <p>Ensure financial security for your loved ones in every situation.</p>
@@ -68,7 +93,7 @@
       </div>
 
       <div class="slide">
-        <img src="assests/Car.jpeg" alt="Car Insurance" loading="lazy">
+        <img src="assests/Car.jpg" alt="Car Insurance" loading="lazy">
         <div class="slide-text">
           <h2>Car Insurance</h2>
           <p>Keep your vehicle safe from accidents, theft, and damages.</p>
@@ -83,125 +108,6 @@
   </div>
 </div>
 
-<!-- Services Section -->
-<section id="services" class="services bg-light py-5">
-  <div class="container">
-    <div class="text-center mb-5">
-      <h2 data-aos="fade-up">Our Services</h2>
-      <p data-aos="fade-up" data-aos-delay="100">Tailored insurance solutions to suit your needs</p>
-    </div>
-    <div class="row g-4">
-      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="200">
-        <div class="card p-4 text-center service-card h-100">
-          <img src="assests/health.jpeg" class="card-img-top rounded" alt="Health Insurance">
-          <div class="card-body">
-            <h5 class="card-title">Health Insurance</h5>
-            <p class="card-text">Comprehensive coverage for medical expenses, surgeries, and wellness checkups.</p>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="300">
-        <div class="card p-4 text-center service-card h-100">
-          <img src="assests/life-insurance.jpg" class="card-img-top rounded" alt="Life Insurance">
-          <div class="card-body">
-            <h5 class="card-title">Life Insurance</h5>
-            <p class="card-text">Secure your family's future with customizable life insurance plans.</p>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="400">
-        <div class="card p-4 text-center service-card h-100">
-          <img src="assests/car-insurance.jpeg" class="card-img-top rounded" alt="Auto Insurance">
-          <div class="card-body">
-            <h5 class="card-title">Vehicle Insurance</h5>
-            <p class="card-text">Protect your car, bike, or fleet from accidents, theft, and damage.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Benefits Section -->
-<section id="benefits" class="benefits">
-  <div class="wrapper">
-    <div class="text-center mb-5">
-      <h2 data-aos="fade-up">Why Choose Us</h2>
-      <p data-aos="fade-up" data-aos-delay="100">Reliable, transparent, and customer-focused</p>
-    </div>
-    <div class="row g-4">
-      <div class="col-md-4" data-aos="fade-right" data-aos-delay="200">
-        <div class="card p-4 text-center benefit-card">
-          <h5>Fast Claims</h5>
-          <p>Quick and hassle-free claims processing to keep you stress-free.</p>
-        </div>
-      </div>
-      <div class="col-md-4" data-aos="fade-up" data-aos-delay="300">
-        <div class="card p-4 text-center benefit-card">
-          <h5>24/7 Support</h5>
-          <p>Round-the-clock assistance from our dedicated customer support team.</p>
-        </div>
-      </div>
-      <div class="col-md-4" data-aos="fade-left" data-aos-delay="400">
-        <div class="card p-4 text-center benefit-card">
-          <h5>Custom Plans</h5>
-          <p>Flexible insurance options tailored to your lifestyle and requirements.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="how-it-works">
-  <h2>How It Works</h2>
-
-  <div class="card-container">
-    <div class="step-card" id="ask-anything-card">
-      <div class="logo-circle">
-        <img src="assests/query.png" alt="Query Dataset">
-      </div>
-      <h3>Ask Anything</h3>
-      <p>Our chatbot searches across <b>6 different datasets</b> to find and respond with the most relevant <b>policy clauses</b> for your query.</p>
-      <div id="askPanel" class="mt-2" style="display:none;">
-        <input type="text" id="howQueryInput" class="form-control mb-2" placeholder="Type your question">
-        <button id="howQuerySend" class="btn btn-primary mb-2">Send</button>
-        <div id="howQueryResult" class="doc-answer small"></div>
-      </div>
-    </div>
-    <div class="step-card" id="no-policy-card">
-      <div class="logo-circle">
-        <img src="assests/recommend.jpeg" alt="Policy Recommendation">
-      </div>
-      <h3>No Policy? No Problem!</h3>
-      <p>Describe your needs to get recommendations, or upload a policy and ask questions below.</p>
-      <div id="recPanel" class="mt-2">
-        <input type="text" id="recInput" class="form-control mb-2" placeholder="Describe your needs or clauses (e.g., maternity cover, room rent)">
-        <button id="recSend" class="btn btn-primary mb-2">Get Recommendations</button>
-        <div id="recResult" class="doc-answer small"></div>
-      </div>
-      <hr>
-      <div class="mt-2">
-        <div class="step-card">
-      <div class="logo-circle">
-        <img src="assests/upload.jpeg" alt="Upload Policy Document">
-      </div>
-
-      <p>Upload your existing <b>policy document (PDF or text)</b>. The chatbot reads and understands it, allowing you to ask <b>any question</b> about your policy instantly.</p>
-    </div>
-        <form id="uploadForm" class="mb-3">
-          <input type="file" id="insuranceFile" accept=".pdf" required class="doc-file-input mb-2">
-          <button type="submit" class="btn btn-secondary doc-upload-btn">Upload & Analyze</button>
-        </form>
-        <div id="qaSection" class="qa-section" style="display:none;">
-          <input type="text" id="userQuestion" class="doc-question-input mb-2 form-control" placeholder="Ask a question about your document">
-          <button id="askBtn" class="btn btn-success doc-ask-btn mb-3">Ask</button>
-          <div id="answer" class="doc-answer"></div>
-        </div>
-      </div>
-    </div>
-    
-  </div>
-</section>
 
 <section id="about">
   <div class="wrapper">
@@ -214,34 +120,165 @@ Trusted by thousands of users, SafeShield stands for security, reliability, and 
   </div>
 </section>
 
-<!-- Signup & Login Modals (unchanged) -->
-<div class="modal fade" id="signupModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" style="border-radius:12px;">
-      <div class="modal-header bg-dark text-white">
-        <h5 class="modal-title">Sign Up</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+
+
+<!-- Services Section -->
+<section id="services" class="services bg-light py-5">
+  <div class="container">
+    <div class="text-center mb-5">
+      <h2 data-aos="fade-up">Our Services</h2>
+      <p data-aos="fade-up" data-aos-delay="100">Tailored insurance solutions to suit your needs</p>
+    </div>
+
+    <div class="row g-4">
+
+      <!-- Health Insurance -->
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="200">
+        <div class="card p-4 text-center service-card h-100">
+          <img src="assests/health.jpeg" class="card-img-top rounded" alt="Health Insurance">
+          <div class="card-body">
+            <h5 class="card-title">Health Insurance</h5>
+            <ul class="service-list">
+              <li>Cashless treatment at network hospitals</li>
+              <li>Pre and post hospitalization coverage</li>
+              <li>Maternity and newborn care</li>
+              <li>Annual health checkups</li>
+              <li>Mental health coverage</li>
+            </ul>
+          </div>
+        </div>
       </div>
-      <div class="modal-body">
-        <form id="signupForm">
-          <div class="mb-3">
-            <label>Full Name</label>
-            <input type="text" class="form-control" placeholder="Enter your full name" required>
+
+      <!-- Life Insurance -->
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="300">
+        <div class="card p-4 text-center service-card h-100">
+          <img src="assests/life-insurance.jpg" class="card-img-top rounded" alt="Life Insurance">
+          <div class="card-body">
+            <h5 class="card-title">Life Insurance</h5>
+            <ul class="service-list">
+              <li>Financial protection for your loved ones</li>
+              <li>Flexible policy terms</li>
+              <li>Tax benefits under Section 80C</li>
+              <li>Critical illness add-ons</li>
+              <li>Guaranteed returns options</li>
+            </ul>
           </div>
-          <div class="mb-3">
-            <label>Email</label>
-            <input type="email" class="form-control" placeholder="Enter your email" required>
+        </div>
+      </div>
+
+      <!-- Travel Insurance -->
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="400">
+        <div class="card p-4 text-center service-card h-100">
+          <img src="assests/Travel-Insurance.webp" class="card-img-top rounded" alt="Travel Insurance">
+          <div class="card-body">
+            <h5 class="card-title">Travel Insurance</h5>
+            <ul class="service-list">
+              <li>Medical emergency coverage</li>
+              <li>Trip cancellation protection</li>
+              <li>Lost baggage compensation</li>
+              <li>Flight delay coverage</li>
+              <li>Adventure sports coverage</li>
+            </ul>
           </div>
-          <div class="mb-3">
-            <label>Password</label>
-            <input type="password" class="form-control" placeholder="Create a password" required>
+        </div>
+      </div>
+
+      <!-- Home Insurance -->
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="500">
+        <div class="card p-4 text-center service-card h-100">
+          <img src="assests/home-insurance.jpg" class="card-img-top rounded" alt="Home Insurance">
+          <div class="card-body">
+            <h5 class="card-title">Home Insurance</h5>
+            <ul class="service-list">
+              <li>Protection from fire, theft, and disasters</li>
+              <li>Coverage for house contents</li>
+              <li>Repair and reconstruction cost coverage</li>
+              <li>Liability for property damage</li>
+              <li>Affordable premium plans</li>
+            </ul>
           </div>
-          <button type="submit" class="btn btn-primary w-100">Sign Up</button>
-        </form>
+        </div>
+      </div>
+
+      <!-- Vehicle Insurance -->
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="600">
+        <div class="card p-4 text-center service-card h-100">
+          <img src="assests/vehicle-insurance.avif" class="card-img-top rounded" alt="Vehicle Insurance">
+          <div class="card-body">
+            <h5 class="card-title">Vehicle Insurance</h5>
+            <ul class="service-list">
+              <li>Comprehensive and third-party plans</li>
+              <li>24x7 roadside assistance</li>
+              <li>Cashless repair at partner garages</li>
+              <li>Damage and theft protection</li>
+              <li>Instant policy renewal</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Business Insurance -->
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="700">
+        <div class="card p-4 text-center service-card h-100">
+          <img src="assests/Business-Insurance.png" class="card-img-top rounded" alt="Business Insurance">
+          <div class="card-body">
+            <h5 class="card-title">Business Insurance</h5>
+            <ul class="service-list">
+              <li>Coverage for property and liability</li>
+              <li>Protection against business interruption</li>
+              <li>Employee safety and compensation</li>
+              <li>Cyber risk and data breach protection</li>
+              <li>Custom policies for SMEs</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+
+<section id="benefits" class="benefits">
+  <div class="wrapper">
+    <div class="text-center mb-5">
+      <h2 data-aos="fade-up">Why Choose SafeShield</h2>
+      <p data-aos="fade-up" data-aos-delay="100">Reliable, transparent, and customer-focused</p>
+    </div>
+    <div class="row g-4">
+      <div class="col-md-4" data-aos="fade-right" data-aos-delay="200">
+        <div class="card p-4 text-center benefit-card">
+          <div class="icon-box">
+            <i class="bi bi-lightning-charge"></i>
+          </div>
+          <h5>Fast Claims</h5>
+          <p>Quick and hassle-free claims processing to keep you stress-free.</p>
+        </div>
+      </div>
+
+      <div class="col-md-4" data-aos="fade-up" data-aos-delay="300">
+        <div class="card p-4 text-center benefit-card">
+          <div class="icon-box">
+            <i class="bi bi-clock-history"></i>
+          </div>
+          <h5>24/7 Support</h5>
+          <p>Round-the-clock assistance from our dedicated customer support team.</p>
+        </div>
+      </div>
+
+      <div class="col-md-4" data-aos="fade-left" data-aos-delay="400">
+        <div class="card p-4 text-center benefit-card">
+          <div class="icon-box">
+            <i class="bi bi-gear"></i>
+          </div>
+          <h5>Custom Plans</h5>
+          <p>Flexible insurance options tailored to your lifestyle and requirements.</p>
+        </div>
       </div>
     </div>
   </div>
-</div>
+</section>
 
 <div class="modal fade" id="loginModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -290,69 +327,317 @@ Trusted by thousands of users, SafeShield stands for security, reliability, and 
       <h2>Frequently Asked Questions</h2>
     </div>
 
-    <div class="input-group mb-3">
+    <!-- Search Bar -->
+    <div class="input-group mb-4">
       <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
       <input type="text" id="faqSearch" class="form-control" placeholder="Search FAQ...">
     </div>
 
+    <!-- Accordion -->
     <div class="accordion" id="faqAccordion">
+      
+      <!-- FAQ 1 -->
       <div class="accordion-item">
-        <h2 class="accordion-header">
-          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+        <h2 class="accordion-header" id="headingOne">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" aria-expanded="true" aria-controls="faq1">
             What types of documents can I upload?
           </button>
         </h2>
-        <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
+        <div id="faq1" class="accordion-collapse collapse show" aria-labelledby="headingOne" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            PDFs of your insurance policies, bills, or claim documents.
+            <p>You can upload various types of insurance-related documents including:</p>
+        <ul>
+         <li><strong>Policy Documents:</strong> PDF files of your insurance policies</li>
+         <li><strong>Bills &amp; Receipts:</strong> Medical bills, repair bills, and other claim-related documents</li>
+         <li><strong>Claim Forms:</strong> Completed or partially filled claim documents</li>
+         <li><strong>Medical Reports:</strong> Lab reports, discharge summaries, and diagnostic reports</li>
+        </ul>
+        <p>Supported formats: PDF, DOC, DOCX, and TXT files up to 10MB in size.</p>
           </div>
         </div>
       </div>
+
+      <!-- FAQ 2 -->
       <div class="accordion-item">
-        <h2 class="accordion-header">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+        <h2 class="accordion-header" id="headingTwo">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" aria-expanded="false" aria-controls="faq2">
             Is my data safe?
           </button>
         </h2>
-        <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+        <div id="faq2" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            All documents are processed securely, and we do not store them permanently without your consent.
+            <p>Absolutely! We take data security very seriously:</p>
+        <ul>
+         <li><strong>Encryption:</strong> All documents are encrypted during upload and processing</li>
+         <li><strong>Temporary Storage:</strong> Documents are processed securely and not stored permanently without your explicit consent</li>
+         <li><strong>Privacy Compliance:</strong> We follow strict data protection regulations and industry standards</li>
+         <li><strong>Secure Servers:</strong> Our infrastructure uses bank-level security protocols</li>
+        </ul>
+        <p>You can delete your documents anytime from your account dashboard.</p>
           </div>
         </div>
       </div>
+
+      <!-- FAQ 3 -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="headingThree">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" aria-expanded="false" aria-controls="faq3">
+            Can I get recommendations without a policy?
+          </button>
+        </h2>
+        <div id="faq3" class="accordion-collapse collapse" aria-labelledby="headingThree" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+             <p>Yes! Our AI-powered recommendation system can help you even without an existing policy:</p>
+        <ul>
+         <li><strong>Needs Assessment:</strong> Simply describe your requirements (e.g., "maternity coverage", "room rent limit")</li>
+         <li><strong>Personalized Suggestions:</strong> Get tailored insurance plan recommendations based on your profile</li>
+         <li><strong>Comparison Tool:</strong> Compare different policies side-by-side</li>
+         <li><strong>Expert Guidance:</strong> Access to insurance advisors for detailed consultation</li>
+        </ul>
+        <p>Start by using our "No Policy? No Problem!" feature in the How It Works section.</p>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- FAQ 4 -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="headingFour">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4" aria-expanded="false" aria-controls="faq4">
+            How does the claims process work?
+          </button>
+        </h2>
+        <div id="faq4" class="accordion-collapse collapse" aria-labelledby="headingThree" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            <p>Our streamlined claims process ensures quick and hassle-free settlements:</p>
+        <li><strong>Document Upload:</strong> Upload your claim documents through our secure platform</li>
+         <li><strong>AI Analysis:</strong> Our system automatically reviews and validates your documents</li>
+         <li><strong>Status Tracking:</strong> Real-time updates on your claim status via SMS and email</li>
+         <li><strong>Quick Settlement:</strong> Most claims are processed within 3-7 business days</li>
+        </ul>
+        <p>Our 24/7 support team is available to assist you throughout the process.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAQ 5-->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="headingFour">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5" aria-expanded="false" aria-controls="faq5">
+            What are your pricing plans?
+          </button>
+        </h2>
+        <div id="faq5" class="accordion-collapse collapse" aria-labelledby="headingFive" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+        <p>We offer flexible pricing options to suit different needs:</p>
+        <ul>
+         <li><strong>Free Plan:</strong> Basic document analysis and 3 queries per month</li>
+         <li><strong>Premium Plan:</strong> ₹299/month - Unlimited queries, priority support, and advanced analytics</li>
+         <li><strong>Family Plan:</strong> ₹499/month - Coverage for up to 6 family members</li>
+         <li><strong>Enterprise:</strong> Custom pricing for businesses and organizations</li>
+        </ul>
+        <p>All plans include our core AI-powered document analysis and recommendation features.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAQ 6-->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="headingSix">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq6" aria-expanded="false" aria-controls="faq6">
+            How can I contact customer support?
+          </button>
+        </h2>
+        <div id="faq6" class="accordion-collapse collapse" aria-labelledby="headingSix" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+        <p>We're here to help you 24/7 through multiple channels:</p>
+        <ul>
+         <li><strong>Live Chat:</strong> Instant support through our website chat widget</li>
+         <li><strong>Email:</strong> support@safeshield.com for detailed queries</li>
+         <li><strong>Phone:</strong> 1800-123-SAFE (7233) - Toll-free helpline</li>
+         <li><strong>WhatsApp:</strong> +91-98765-43210 for quick assistance</li>
+        </ul>
+        <p>Our average response time is under 2 minutes for chat and 1 hour for email queries.</p>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
 
- 
+<section id="how-it-works">
+  <h2>How It Works</h2>
 
-<section id="testimonials" class="text-center py-5">
-  <div class="container"> 
+  <div class="card-container">
+    <div class="step-card" id="ask-anything-card">
+      <div class="logo-circle">
+        <img src="assests/query.png" alt="Query Dataset">
+      </div>
+      <h3>Ask Anything</h3>
+      <p>Our chatbot searches across <b>6 different datasets</b> to find and respond with the most relevant <b>policy clauses</b> for your query.</p>
+      <div id="askPanel" class="mt-2" style="display:none;">
+        <input type="text" id="howQueryInput" class="form-control mb-2" placeholder="Type your question">
+        <button id="howQuerySend" class="btn btn-primary mb-2">Send</button>
+        <div id="howQueryResult" class="doc-answer small"></div>
+      </div>
+    </div>
+    <div class="step-card" id="no-policy-card">
+      <div class="logo-circle">
+        <img src="assests/recommend.jpeg" alt="Policy Recommendation">
+      </div>
+      <h3>No Policy? No Problem!</h3>
+      <p>Describe your needs to get recommendations, or upload a policy and ask questions below.</p>
+      <div id="recPanel" class="mt-2">
+        <input type="text" id="recInput" class="form-control mb-2" placeholder="Describe your needs or clauses (e.g., maternity cover, room rent)">
+        <button id="recSend" class="btn btn-primary mb-2">Get Recommendations</button>
+        <div id="recResult" class="doc-answer small"></div>
+      </div>
+      <hr>
+      <div class="mt-2">
+        <div class="step-card">
+      <div class="logo-circle">
+        <img src="assests/upload.jpeg" alt="Upload Policy Document">
+      </div>
+
+      <p>Upload your existing <b>policy document (PDF or text)</b>. The chatbot reads and understands it, allowing you to ask <b>any question</b> about your policy instantly.</p>
+    </div>
+        <form id="uploadForm" class="mb-3">
+          <input type="file" id="insuranceFile" accept=".pdf" required class="doc-file-input mb-2">
+          <button type="submit" class="btn btn-secondary doc-upload-btn">Upload & Analyze</button>
+        </form>
+    
+        <div id="qaSection" class="qa-section" style="display:none;">
+          <input type="text" id="userQuestion" class="doc-question-input mb-2 form-control" placeholder="Ask a question about your document">
+          <button id="askBtn" class="btn btn-success doc-ask-btn mb-3">Ask</button>
+          <div id="answer" class="doc-answer"></div>
+        </div>
+      </div>
+    </div>
+    
+  </div>
+</section>
+
+
+
+<!-- Signup & Login Modals -->
+<div class="modal fade" id="signupModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:12px;">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title">Sign Up</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="signupForm">
+          <div class="mb-3">
+            <label>Full Name</label>
+            <input type="text" class="form-control" placeholder="Enter your full name" required>
+          </div>
+          <div class="mb-3">
+            <label>Email</label>
+            <input type="email" class="form-control" placeholder="Enter your email" required>
+          </div>
+          <div class="mb-3">
+            <label>Password</label>
+            <input type="password" class="form-control" placeholder="Create a password" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Sign Up</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+      
+
+<!-- Testimonials -->
+<section id="testimonials" class="py-5 position-relative" style="background: linear-gradient(135deg, #f8fafc, #eef2f7); overflow:hidden;">
+  <div class="container position-relative">
     <div class="text-center mb-5">
-      <h2>What Our Users Say</h2>
+      <h2 class="fw-bold mb-2" style="color:#1a1a1a;">What Our Users Say</h2>
+      <p class="text-muted" style="font-size:1.05rem;">Honest feedback from people who simplified their insurance with SafeShield</p>
     </div>
+
     <div class="row justify-content-center">
-      <div class="col-md-4">
-        <div class="card p-3">
-          <p>"SafeShield made understanding my policy so simple!"</p>
-          <h6>- Priya S.</h6>
+
+      <!-- Testimonial 1 -->
+      <div class="col-md-4 mb-4">
+        <div class="testimonial-card p-4 rounded-4 h-100 text-center">
+          <div class="quote-icon mb-3">
+            <i class="bi bi-chat-right-quote-fill"></i>
+          </div>
+          <p class="testimonial-text">"SafeShield made understanding my policy so simple!"</p>
+          <div class="testimonial-stars mb-3">
+            <i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i>
+            <i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i>
+            <i class="bi bi-star-fill"></i>
+          </div>
+          <h6 class="fw-bold text-dark mb-0">Priya S.</h6>
         </div>
       </div>
-      <div class="col-md-4">
-        <div class="card p-3">
-          <p>"Instant answers saved me hours of confusion."</p>
-          <h6>- Rahul K.</h6>
+
+      <!-- Testimonial 2 -->
+      <div class="col-md-4 mb-4">
+        <div class="testimonial-card p-4 rounded-4 h-100 text-center">
+          <div class="quote-icon mb-3">
+            <i class="bi bi-chat-right-quote-fill"></i>
+          </div>
+          <p class="testimonial-text">"Instant answers saved me hours of confusion."</p>
+          <div class="testimonial-stars mb-3">
+            <i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i>
+            <i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i>
+            <i class="bi bi-star-half"></i>
+          </div>
+          <h6 class="fw-bold text-dark mb-0">Rahul K.</h6>
+          
         </div>
       </div>
-      <div class="col-md-4">
-        <div class="card p-3">
-          <p>"Highly recommend for anyone dealing with insurance documents."</p>
-          <h6>- Anjali M.</h6>
+
+      <!-- Testimonial 3 -->
+      <div class="col-md-4 mb-4">
+        <div class="testimonial-card p-4 rounded-4 h-100 text-center">
+          <div class="quote-icon mb-3">
+            <i class="bi bi-chat-right-quote-fill"></i>
+          </div>
+          <p class="testimonial-text">"Highly recommend for anyone dealing with insurance documents."</p>
+          <div class="testimonial-stars mb-3">
+            <i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i>
+            <i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i>
+            <i class="bi bi-star-fill"></i>
+          </div>
+          <h6 class="fw-bold text-dark mb-0">Anjali M.</h6>
         </div>
       </div>
+
     </div>
   </div>
 </section>
+
+
+
+<section id="compare" class="py-5 bg-light">
+  <div class="container">
+    <h2 class="text-center mb-4">Compare Insurance Plans</h2>
+    <table class="table table-bordered text-center">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>Basic Plan</th>
+          <th>Premium Plan</th>
+          <th>Family Plan</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Coverage Amount</td><td>₹5 Lakh</td><td>₹10 Lakh</td><td>₹15 Lakh</td></tr>
+        <tr><td>Cashless Hospitals</td><td>50+</td><td>200+</td><td>500+</td></tr>
+        <tr><td>24/7 Support</td><td>✔</td><td>✔</td><td>✔</td></tr>
+        <tr><td>Premium</td><td>₹199/mo</td><td>₹299/mo</td><td>₹499/mo</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>  
+
+
 
 <!-- Contact Section -->
 <section id="contact">
@@ -380,36 +665,59 @@ Trusted by thousands of users, SafeShield stands for security, reliability, and 
   </div>
 </section>
 
-<!-- Badges -->
-<section id="trust" class="py-4 bg-light text-center">
-  <div class="container d-flex flex-wrap justify-content-center align-items-center gap-4">
-    <div class="badge-item d-flex align-items-center gap-2">
-      <img src="assests/lock-icon.png" alt="Encrypted" width="30">
-      <span>Data Encrypted</span>
+<!-- Trust Badges Section -->
+<section id="trust" class="py-5 position-relative" style="background: linear-gradient(135deg, #f8fafc, #eef2f7); overflow:hidden;">
+  <div class="container text-center position-relative">
+    <div class="text-center mb-4">
+      <h2 class="fw-bold mb-2" style="color:#1a1a1a;">Your Security. Our Priority.</h2>
+      <p class="text-muted" style="font-size:1.05rem;">SafeShield is built with the highest standards of privacy and data protection.</p>
     </div>
-    <div class="badge-item d-flex align-items-center gap-2">
-      <img src="assests/gdpr-icon.jpeg" alt="GDPR" width="30">
-      <span>GDPR Compliant</span>
-    </div>
-    <div class="badge-item d-flex align-items-center gap-2">
-      <img src="assests/users.icon.jpeg" alt="Trusted" width="30">
-      <span>Trusted by 10,000+ users</span>
+
+    <div class="d-flex flex-wrap justify-content-center align-items-center gap-4">
+      <!-- Badge 1 -->
+      <div class="badge-item p-3 px-4 d-flex align-items-center gap-3 rounded-4 shadow-sm">
+        <div class="icon-wrap">
+          <img src="assests/lock-icon.png" alt="Encrypted" class="trust-icon">
+        </div>
+        <span class="fw-semibold">Data Encrypted</span>
+      </div>
+
+      <!-- Badge 2 -->
+      <div class="badge-item p-3 px-4 d-flex align-items-center gap-3 rounded-4 shadow-sm">
+        <div class="icon-wrap">
+          <img src="assests/gdpr-icon.jpeg" alt="GDPR" class="trust-icon">
+        </div>
+        <span class="fw-semibold">GDPR Compliant</span>
+      </div>
+
+      <!-- Badge 3 -->
+      <div class="badge-item p-3 px-4 d-flex align-items-center gap-3 rounded-4 shadow-sm">
+        <div class="icon-wrap">
+          <img src="assests/users.icon.jpeg" alt="Trusted" class="trust-icon">
+        </div>
+        <span class="fw-semibold">Trusted by 10,000+ Users</span>
+      </div>
     </div>
   </div>
 </section>
 
-<footer class="bg-dark text-white py-5">
+
+<!-- Footer Start -->
+<footer>
   <div class="container">
     <div class="row g-4">
+      <!-- Quick Links -->
       <div class="col-md-3">
         <h5>Quick Links</h5>
         <ul class="list-unstyled">
-          <li><a href="#services" class="text-white text-decoration-none">Services</a></li>
-          <li><a href="#about" class="text-white text-decoration-none">About</a></li>
-          <li><a href="#faq" class="text-white text-decoration-none">FAQ</a></li>
-          <li><a href="#contact" class="text-white text-decoration-none">Contact</a></li>
+          <li><a href="#services">Services</a></li>
+          <li><a href="#about">About</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="#contact">Contact</a></li>
         </ul>
       </div>
+
+      <!-- Trusted & Secure -->
       <div class="col-md-3">
         <h5>Trusted & Secure</h5>
         <div class="d-flex flex-column gap-2">
@@ -427,14 +735,18 @@ Trusted by thousands of users, SafeShield stands for security, reliability, and 
           </div>
         </div>
       </div>
+
+      <!-- Social Media -->
       <div class="col-md-3">
         <h5>Follow Us</h5>
         <div class="d-flex gap-3 mt-2">
-          <a href="#" class="text-white"><i class="bi bi-twitter"></i></a>
-          <a href="#" class="text-white"><i class="bi bi-linkedin"></i></a>
-          <a href="#" class="text-white"><i class="bi bi-instagram"></i></a>
+          <a href="#"><i class="bi bi-twitter"></i></a>
+          <a href="#"><i class="bi bi-linkedin"></i></a>
+          <a href="#"><i class="bi bi-instagram"></i></a>
         </div>
       </div>
+
+      <!-- Newsletter -->
       <div class="col-md-3">
         <h5>Newsletter</h5>
         <form class="d-flex flex-column gap-2 mt-2">
@@ -444,325 +756,16 @@ Trusted by thousands of users, SafeShield stands for security, reliability, and 
       </div>
     </div>
 
+    <!-- Footer Bottom -->
     <div class="text-center mt-4">
       <small>&copy; 2025 SafeShield. All rights reserved.</small>
     </div>
   </div>
 </footer>
 
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/typed.js@2.0.12"></script>
 <script src="carousel.js"></script>
-<script>
-/* ---------- Config & helpers ---------- */
- // use the Node server proxy (same origin when you open via http://localhost:3000)
-const API_UPLOAD = '/api/upload';
-const API_QUERY  = '/api/query';
-const API_RECOMMEND = '/api/recommend';
-
-function el(id){ return document.getElementById(id); }
-function showToast(msg, kind='info'){
-  // small inline toast using alert() for simplicity; replace with nicer UI if you want
-  alert(msg);
-}
-function setLoading(btn, isLoading, originalText){
-  if(!btn) return;
-  if(isLoading){
-    btn.disabled = true;
-    btn.dataset.origText = originalText || btn.innerText;
-    btn.innerText = 'Please wait...';
-  } else {
-    btn.disabled = false;
-    btn.innerText = btn.dataset.origText || originalText || btn.innerText;
-  }
-}
-
-/* ---------- How-It-Works interactive panels ---------- */
-const askCard = document.getElementById('ask-anything-card');
-const noPolicyCard = document.getElementById('no-policy-card');
-const askPanel = document.getElementById('askPanel');
-const howQueryInput = document.getElementById('howQueryInput');
-const howQuerySend = document.getElementById('howQuerySend');
-const howQueryResult = document.getElementById('howQueryResult');
-const recPanel = document.getElementById('recPanel');
-const recInput = document.getElementById('recInput');
-const recSend = document.getElementById('recSend');
-const recResult = document.getElementById('recResult');
-
-function toggleAskPanel(show){
-  if(askPanel) askPanel.style.display = show ? 'block' : 'none';
-}
-
-if(askCard){
-  askCard.addEventListener('click', (e)=>{
-    // prevent clicks on buttons from re-toggling
-    if(e.target && (e.target.id === 'howQuerySend')) return;
-    toggleAskPanel(true);
-    if(howQueryInput) howQueryInput.focus();
-  });
-}
-// Recommendations submit handler
-if(recSend){
-  recSend.addEventListener('click', async (e)=>{
-    e.stopPropagation();
-    const need = (recInput && recInput.value || '').trim();
-    if(!need){ showToast('Please describe your needs.'); return; }
-    setLoading(recSend, true, 'Get Recommendations');
-    recResult.innerHTML = '<div class="text-center py-2">Finding recommendations...</div>';
-    try {
-      const data = await postJson(API_RECOMMEND, { need, top_n: 3 });
-      renderInlineRecs(recResult, data);
-    } catch(err){
-      recResult.innerHTML = `<div class="text-danger">${escapeHtml(err.message)}</div>`;
-    } finally {
-      setLoading(recSend, false);
-    }
-  });
-}
-
-// Remove blanket focus on rec input to avoid stealing focus from Upload & Ask
-
-async function postJson(url, payload){
-  const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-  const data = await resp.json().catch(()=>({ error:'Non-JSON response' }));
-  if(!resp.ok){ throw new Error(data.error || `Request failed (${resp.status})`); }
-  return data;
-}
-
-function renderInlineQA(target, data){
-  if(!target) return;
-  if(!data){ target.innerHTML = '<div>No response</div>'; return; }
-  if(data.error){ target.innerHTML = `<div class="text-danger">Error: ${escapeHtml(data.error)}</div>`; return; }
-  let html = `<div class="card p-2"><div class="fw-bold mb-1">Answer</div><div>${escapeHtml(data.answer || '')}</div>`;
-  const refs = Array.isArray(data.refs) ? data.refs : [];
-  if(refs.length){
-    html += `<hr><div class="fw-bold">References</div>`;
-    refs.forEach((r)=>{
-      html += `<div class="small mb-2"><strong>${escapeHtml(r.policy || 'Unknown')}</strong> — Page ${escapeHtml(String(r.page || ''))} — Score: ${typeof r.score==='number'?r.score:''}<div class="text-muted">${escapeHtml(r.excerpt || '')}</div></div>`;
-    });
-  }
-  html += `</div>`;
-  target.innerHTML = html;
-}
-
-function renderInlineRecs(target, data){
-  if(!target) return;
-  if(!data){ target.innerHTML = '<div>No response</div>'; return; }
-  if(data.error){ target.innerHTML = `<div class="text-danger">Error: ${escapeHtml(data.error)}</div>`; return; }
-  const recs = Array.isArray(data.recs) ? data.recs : [];
-  if(!recs.length){ target.innerHTML = '<div>No recommendations found.</div>'; return; }
-  let html = `<div class="card p-2"><div class="fw-bold mb-2">Recommended Policies</div>`;
-  recs.forEach((r)=>{
-    const snips = (r.snips || []).map(s=>`<div class="text-muted small">• ${escapeHtml(s)}</div>`).join('');
-    html += `<div class="mb-2"><div><strong>#${r.rank} ${escapeHtml(r.policy || '')}</strong> — Score: ${typeof r.score==='number'?r.score:''}</div>${snips}</div>`;
-  });
-  html += `</div>`;
-  target.innerHTML = html;
-}
-
-if(howQuerySend){
-  howQuerySend.addEventListener('click', async (e)=>{
-    e.stopPropagation();
-    const q = (howQueryInput && howQueryInput.value || '').trim();
-    if(!q){ showToast('Please enter a question.'); return; }
-    setLoading(howQuerySend, true, 'Send');
-    howQueryResult.innerHTML = '<div class="text-center py-2">Searching...</div>';
-    try {
-      const data = await postJson(API_QUERY, { q, k: 5 });
-      renderInlineQA(howQueryResult, data);
-    } catch(err){
-      howQueryResult.innerHTML = `<div class="text-danger">${escapeHtml(err.message)}</div>`;
-    } finally {
-      setLoading(howQuerySend, false);
-    }
-  });
-}
-/* ---------- Upload handler ---------- */
-const uploadform = el('uploadForm');
-const insuranceFile = el('insuranceFile');
-const qasection = el('qaSection');
-const askBtn = el('askBtn');
-const userQuestion = el('userQuestion');
-const answerDiv = el('answer');
-
-if(uploadform){
-  uploadform.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    // TEMP for local testing: enable uploads
-    const loggedIn = true; // change to real check in production
-    if(!loggedIn){
-      const authModal = new bootstrap.Modal(document.getElementById('authChoiceModal'));
-      authModal.show();
-      return;
-    }
-
-    const file = insuranceFile.files[0];
-    if(!file){ showToast('Please choose a file to upload.'); return; }
-
-    const btn = uploadform.querySelector('button[type="submit"]');
-    setLoading(btn, true, btn.innerText);
-
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-
-      const resp = await fetch(API_UPLOAD, { method: 'POST', body: fd });
-      if(!resp.ok){
-        const err = await resp.json().catch(()=>({error:'Upload failed'}));
-        throw new Error(err.error || 'Upload failed');
-      }
-      const j = await resp.json();
-      showToast(`Uploaded: ${j.filename || 'file'}. Index ready.`,'success');
-       
-      // Reveal QA UI for uploaded document
-      qasection.style.display = 'block';
-      // Ensure recommendation panel is hidden after upload to avoid confusion
-      const recPanelEl = document.getElementById('recPanel');
-      if(recPanelEl) recPanelEl.style.display = 'none';
-      // Also show the Ask Anything panel
-      try { toggleAskPanel(true); } catch(_){}
-      userQuestion.focus();
-      insuranceFile.value = '';
-    } catch (err){
-      console.error('Upload error', err);
-      showToast('Upload failed: ' + err.message, 'error');
-    } finally {
-      setLoading(uploadform.querySelector('button[type="submit"]'), false);
-    }
-  });
-}
-
-/* ---------- Ask / QA handler ---------- */
-if(askBtn){
-  askBtn.addEventListener('click', async (e) => {
-    e.preventDefault();
-    const q = userQuestion.value && userQuestion.value.trim();
-    if(!q){ showToast('Please enter a question.'); return; }
-    setLoading(askBtn, true, 'Ask');
-
-    answerDiv.innerHTML = `<div class="text-center py-3">Searching for answers...</div>`;
-
-    try {
-      const resp = await fetch(API_QUERY, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ q, k: 5 })
-      });
-      if(!resp.ok){
-        const err = await resp.json().catch(()=>({error:'Query failed'}));
-        throw new Error(err.error || 'Query failed');
-      }
-      const data = await resp.json();
-      console.log('Data received from /api/query:', data);
-      renderAnswer(data);
-    } catch (err){
-      console.error('Query error', err);
-      answerDiv.innerHTML = `<div class="text-danger">Error: ${err.message}</div>`;
-    } finally {
-      setLoading(askBtn, false);
-    }
-  });
-}
-
-function renderAnswer(data){
-  if(!data){ answerDiv.innerHTML = `<div>No response</div>`; return; }
-  if(data.error){
-    answerDiv.innerHTML = `<div class="text-danger">Error: ${data.error}</div>`; return;
-  }
-  console.log('Response from backend:', data);
-  console.log('Answer to display:', data.answer);
-
-  const answerText = data.answer || 'Here are the results:';
-  let html = `<div class="card p-3"><h5>Answer</h5><p>${escapeHtml(answerText)}</p>`;
-
-  const refs = data.refs || [];
-  const fulls = data.full_texts || [];
-
-  if(Array.isArray(refs) && refs.length){
-    html += `<hr><h6>References</h6>`;
-    refs.forEach((r, idx) => {
-      html += `<div class="mb-3 ref-item" id="ref-${idx}">
-        <div><strong>${escapeHtml(r.policy || 'Unknown')}</strong> — Page ${escapeHtml(String(r.page || ''))} — Score: ${r.score ?? ''}</div>
-        <div class="small text-muted mt-1 excerpt">${escapeHtml(r.excerpt || '')}</div>
-      </div>`;
-    });
-  }
-
-  html += `</div>`;
-  answerDiv.innerHTML = html;
-
-  // wire up show-more behaviors for this render using local "fulls"
-  document.querySelectorAll('.show-more').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const idx = Number(btn.dataset.idx);
-      const full = (fulls[idx] && fulls[idx].full_text) ? fulls[idx].full_text : null;
-      const clause = (fulls[idx] && fulls[idx].clause_text) ? fulls[idx].clause_text : null;
-
-      const container = document.getElementById(`ref-${idx}`);
-      if(!container) return;
-
-      if(btn.dataset.expanded === '1'){
-        const existingFull = container.querySelector('.full-text');
-        if(existingFull) existingFull.remove();
-        btn.textContent = 'Show more';
-        btn.dataset.expanded = '0';
-      } else {
-        let moreHtml = '<div class="full-text mt-2 p-2 border rounded bg-light">';
-        if(clause){
-          moreHtml += `<div class="fw-bold mb-1">Clause context:</div><div class="small mb-2">${escapeHtml(clause)}</div>`;
-        }
-        if(full){
-          moreHtml += `<div class="full-body small">${escapeHtml(full)}</div>`;
-        } else {
-          moreHtml += `<div class="text-muted small">Full text not available.</div>`;
-        }
-        moreHtml += '</div>';
-        container.insertAdjacentHTML('beforeend', moreHtml);
-        btn.textContent = 'Show less';
-        btn.dataset.expanded = '1';
-      }
-    });
-  });
-}
-
-
-/* ---------- FAQ Search ---------- */
-const faqSearch = el('faqSearch');
-if(faqSearch){
-  faqSearch.addEventListener('input', (e)=>{
-    const q = e.target.value.trim().toLowerCase();
-    const items = document.querySelectorAll('#faqAccordion .accordion-item');
-    items.forEach(it=>{
-      const txt = it.innerText.toLowerCase();
-      if(!q || txt.includes(q)) it.style.display = '';
-      else it.style.display = 'none';
-    });
-  });
-}
-
-/* ---------- Typed.js hero text ---------- */
-if(window.Typed){
-  try {
-    const typed = new Typed('#typed', {
-      strings: ['Understand your policy in seconds.','Upload. Ask. Understand.','Insurance made simple.'],
-      typeSpeed: 50,
-      backSpeed: 25,
-      backDelay: 1800,
-      loop: true
-    });
-  } catch (e){ console.warn('Typed init failed', e); }
-}
-
-/* ---------- Small utilities ---------- */
-function escapeHtml(unsafe){
-  if(!unsafe && unsafe !== 0) return '';
-  return String(unsafe)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-</script>
 </body>
 </html>

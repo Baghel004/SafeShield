@@ -1,4 +1,3 @@
-// backend-node/server.js
 const express = require('express');
 const path = require('path');
 const multer = require('multer');
@@ -7,20 +6,18 @@ const morgan = require('morgan');
 const axios = require('axios');
 
 
-// Attempt to get a working fetch implementation:
-// 1) prefer globalThis.fetch (Node 18+), 2) try undici.fetch, 3) try node-fetch (v2)
 let fetch;
 try {
   if (typeof globalThis.fetch === 'function') {
     fetch = globalThis.fetch.bind(globalThis);
   } else {
     try {
-      // undici (recommended)
+      
       fetch = require('undici').fetch;
     } catch (e) {
-      // fallback to node-fetch v2 (if installed)
+    
       const nf = require('node-fetch');
-      // node-fetch v2 exports the function directly
+
       fetch = nf;
     }
   }
@@ -29,7 +26,7 @@ try {
   throw err;
 }
 
-const FormData = require('form-data'); // npm install form-data
+const FormData = require('form-data'); 
 const app = express();
 
 const FRONTEND_DIR = path.join(__dirname, '../frontend');
@@ -145,14 +142,14 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       } catch (axErr) {
         console.error(`Axios POST to ${upstreamUrl} failed:`, axErr && axErr.stack ? axErr.stack : axErr);
         lastErr = axErr;
-        // try next path
+       
       }
     }
 
     const msg = lastErr ? lastErr.message || String(lastErr) : 'All upstream attempts failed';
     return res.status(502).json({ error: 'Failed to forward file to Python service', detail: msg });
   } finally {
-    // cleanup the temp file
+    
     fs.unlink(tmpPath, (err) => {
       if (err) console.warn('Failed to remove temp upload:', tmpPath, err);
     });
@@ -160,7 +157,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 });
 
 
-/* fallback for SPA */
+
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   const indexPath = path.join(FRONTEND_DIR, 'index.html');
@@ -169,13 +166,11 @@ app.use((req, res, next) => {
 });
 
 const server = app.listen(PORT, () => console.log(`Node server running: http://localhost:${PORT} (proxy -> ${UPSTREAM_PY})`));
-// Increase timeouts to accommodate long ML build/index operations
-// headersTimeout: time to receive the complete header from the client
-// requestTimeout: total time for the request (0 = no timeout)
+
 try {
-  server.headersTimeout = 300000; // 5 minutes
-  server.requestTimeout = 0;      // disable overall request timeout
-  server.keepAliveTimeout = 65000; // slightly above common proxies (optional)
+  server.headersTimeout = 300000;
+  server.requestTimeout = 0;      
+  server.keepAliveTimeout = 65000; 
 } catch (e) {
   console.warn('Could not adjust server timeouts:', e);
 }
