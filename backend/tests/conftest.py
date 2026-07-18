@@ -12,6 +12,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db import get_db
@@ -37,12 +38,46 @@ TEST_DATABASE_URL = os.getenv(
 )
 
 
+_pgvector_available = False
+
+
+def pgvector_available() -> bool:
+    """Whether the test database has the pgvector extension.
+
+    CI uses the pgvector/pgvector image so this is always true there. A plain
+    local Postgres may not have it, in which case vector-dependent tests skip
+    instead of failing the entire suite.
+    """
+    return _pgvector_available
+
+
+needs_pgvector = pytest.mark.skipif(
+    not pgvector_available, reason="pgvector extension not available"
+)
+
+
 @pytest.fixture(scope="session")
 async def engine() -> AsyncGenerator:
+    global _pgvector_available
+
     eng = create_async_engine(TEST_DATABASE_URL, poolclass=None)
+
+    async with eng.begin() as conn:
+        try:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            _pgvector_available = True
+        except Exception:  # noqa: BLE001 -- absence is expected on plain Postgres
+            _pgvector_available = False
+
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        if _pgvector_available:
+            await conn.run_sync(Base.metadata.create_all)
+        else:
+            # Everything except `chunks`, whose vector column needs the extension.
+            tables = [t for name, t in Base.metadata.tables.items() if name != "chunks"]
+            await conn.run_sync(Base.metadata.create_all, tables=tables)
+
     yield eng
     await eng.dispose()
 

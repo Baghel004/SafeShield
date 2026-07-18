@@ -35,6 +35,23 @@ class Settings(BaseSettings):
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # --- Redis / background jobs ---
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # --- OpenAI ---
+    OPENAI_API_KEY: str | None = None
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # Must match the model above and the vector(N) column in migration 0002.
+    # Changing it needs a migration, not just a config edit.
+    EMBEDDING_DIMENSIONS: int = 1536
+    EMBEDDING_BATCH_SIZE: int = 96
+    CHAT_MODEL: str = "gpt-4o-mini"
+
+    # --- Uploads ---
+    MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024
+    MAX_PDF_PAGES: int = 400
+    UPLOAD_DIR: str = "uploads"
+
     @property
     def sync_database_url(self) -> str:
         """Alembic runs migrations synchronously. psycopg3 handles sync and async

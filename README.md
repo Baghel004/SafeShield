@@ -20,7 +20,7 @@ real RAG pipeline.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | FastAPI + Postgres + JWT auth + migrations + CI | ✅ Done |
-| 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector | ⬜ Next |
+| 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector | 🟡 Code complete; storage unverified (needs pgvector) |
 | 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ⬜ |
 | 4 | Evaluation harness + quality regression gate in CI | ⬜ |
 | 5 | React frontend | ⬜ |
@@ -71,6 +71,32 @@ revokes its entire family.
 **psycopg3 over asyncpg.** One driver covers the async application and the
 synchronous Alembic migrations under a single URL scheme, and it avoids a
 compiled-extension load failure seen on some Windows setups.
+
+**Extraction emits typed blocks, not a flat string.** `page.extract_text()`
+interleaves benefit-table cells into surrounding prose, making the numbers
+unrecoverable. Tables are extracted separately as markdown and never split
+across chunks; headings become their own blocks so every chunk can carry a
+section breadcrumb. Running headers and footers are detected by cross-page
+repetition and dropped — left in, the insurer's contact details outweigh the
+policy text in the index.
+
+**The embedding provider is an interface.** A deterministic fake lets CI run the
+full ingestion path — extract, chunk, embed, store, retrieve — with no API key
+and no network. Only the vectors differ.
+
+### Extraction results on the sample corpus
+
+| Document | Pages | Chunks | Median tokens |
+|---|---:|---:|---:|
+| BAJHLIP23020V012223 | 49 | 224 | 132 |
+| CHOTGDP23004V012223 | 101 | 295 | 169 |
+| ICIHLIP22012V012223 | — | 148 | 162 |
+| HDFHLIP23024V072223 | — | 103 | 177 |
+| HDFC Poorna Suraksha | 31 | 68 | 278 |
+| EDLHLGA23009V012223 | 2 | 7 | 198 |
+| **Total** | | **845** | |
+
+100% of chunks carry a section breadcrumb; none exceed the token cap.
 
 ---
 
