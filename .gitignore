@@ -1,2 +1,33 @@
-/backend/node_modules
-/backend-python/venv
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Secrets
+.env
+.env.local
+*.pem
+
+# Uploads / generated artifacts
+backend/uploads/
+backend-python/venv/
+backend-python/persist/
+backend-python/uploads/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
