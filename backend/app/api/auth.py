@@ -161,6 +161,11 @@ async def refresh(
             .where(RefreshToken.family_id == token.family_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=now)
         )
+        # Commit before raising. The session dependency rolls back on any
+        # exception, so without this the revocation is silently discarded and
+        # the stolen family stays usable -- the request 401s but nothing is
+        # actually revoked.
+        await db.commit()
         _clear_refresh_cookie(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

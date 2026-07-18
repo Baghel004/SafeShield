@@ -97,8 +97,13 @@ pip install -e ".[dev]"
 
 cp .env.example .env    # point DATABASE_URL at your Postgres
 alembic upgrade head
-uvicorn app.main:app --reload
+python run.py           # RELOAD=true for auto-reload
 ```
+
+Use `run.py` rather than invoking `uvicorn` directly. On Windows, uvicorn builds
+its event loop before importing the app, and psycopg3 cannot run on Windows'
+default `ProactorEventLoop` — `run.py` selects a compatible loop first. It is a
+no-op on Linux and macOS, so the same command works everywhere.
 
 ### Tests
 

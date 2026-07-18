@@ -108,22 +108,33 @@ class TestRefresh:
         assert (await client.post("/api/auth/refresh")).status_code == 401
 
     async def test_reuse_of_rotated_token_revokes_the_family(self, client: AsyncClient):
-        """The stolen-token scenario: an old token must not just fail, it must
-        invalidate every sibling so the attacker's copy dies too."""
+        """The stolen-token scenario: replaying a spent token must not merely be
+        rejected, it must revoke every sibling so the attacker's copy dies too.
+
+        Each request sets the cookie explicitly rather than relying on the jar:
+        the 401 responses clear it, so a jar-driven follow-up would 401 with
+        "missing refresh token" and pass for entirely the wrong reason.
+        """
         await _register(client)
         stolen = client.cookies[REFRESH_COOKIE]
 
-        # Legitimate user rotates; `stolen` is now spent.
-        assert (await client.post("/api/auth/refresh")).status_code == 200
+        rotated = await client.post("/api/auth/refresh")
+        assert rotated.status_code == 200
+        current = rotated.cookies[REFRESH_COOKIE]
+        assert current != stolen
 
-        # Attacker replays the old token.
+        # Attacker replays the spent token.
         client.cookies.set(REFRESH_COOKIE, stolen)
         replay = await client.post("/api/auth/refresh")
         assert replay.status_code == 401
         assert "reuse" in replay.json()["detail"].lower()
 
-        # And the legitimate current token is now dead too.
-        assert (await client.post("/api/auth/refresh")).status_code == 401
+        # The legitimate, still-current token must now be dead as well -- and
+        # specifically because it was revoked, not because it went missing.
+        client.cookies.set(REFRESH_COOKIE, current)
+        after = await client.post("/api/auth/refresh")
+        assert after.status_code == 401
+        assert "missing" not in after.json()["detail"].lower()
 
 
 class TestLogout:
