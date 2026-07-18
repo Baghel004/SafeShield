@@ -87,7 +87,7 @@ async def _enqueue_ingestion(document_id: uuid.UUID) -> None:
         try:
             await pool.enqueue_job("ingest_document_task", str(document_id))
         finally:
-            await pool.close()
+            await pool.aclose()
     except Exception:
         logger.warning(
             "Could not enqueue ingestion for %s; document left pending", document_id, exc_info=True

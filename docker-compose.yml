@@ -5,8 +5,11 @@ services:
       POSTGRES_USER: safeshield
       POSTGRES_PASSWORD: safeshield
       POSTGRES_DB: safeshield
+    # Host port is configurable: a locally-installed Postgres already holding
+    # 5432 will silently shadow this container and you end up querying the wrong
+    # database. Set POSTGRES_PORT to move it.
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro

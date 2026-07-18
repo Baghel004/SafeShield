@@ -23,21 +23,14 @@ logger = logging.getLogger(__name__)
 
 
 async def ingest_document_task(ctx: dict[str, Any], document_id: str) -> int:
-    """Ingest one uploaded document. Retried by ARQ on failure."""
+    """Ingest one uploaded document. Retried by ARQ on failure.
+
+    ingest_document owns its own transactions -- it must not hold one open
+    across the embedding call -- so no session is opened here.
+    """
     doc_id = uuid.UUID(document_id)
     path = storage_path(settings.UPLOAD_DIR, doc_id)
-
-    async with SessionLocal() as db:
-        try:
-            count = await ingest_document(db, doc_id, path, get_embedding_provider())
-            await db.commit()
-        except Exception:
-            # ingest_document already recorded status=failed on its own session
-            # state; commit that so the user sees the failure instead of a
-            # document stuck on "processing".
-            await db.commit()
-            raise
-    return count
+    return await ingest_document(SessionLocal, doc_id, path, get_embedding_provider())
 
 
 class WorkerSettings:

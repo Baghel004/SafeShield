@@ -24,8 +24,11 @@ EMBEDDING_DIMENSIONS = 1536  # text-embedding-3-small; keep in sync with setting
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
+    # create_type=False on the column reference below: the type is created here
+    # once, explicitly. Without it, create_table emits a second CREATE TYPE and
+    # the migration dies with "type document_status already exists".
     document_status = postgresql.ENUM(
-        "pending", "processing", "ready", "failed", name="document_status"
+        "pending", "processing", "ready", "failed", name="document_status", create_type=False
     )
     document_status.create(op.get_bind(), checkfirst=True)
 
