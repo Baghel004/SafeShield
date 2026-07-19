@@ -7,6 +7,7 @@ documents hard: repeated page furniture, benefit tables, and numbered clauses.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections import Counter
 from pathlib import Path
@@ -16,7 +17,7 @@ import pytest
 from app.core.files import InvalidUploadError, sanitize_filename, storage_path, validate_pdf_bytes
 from app.rag.chunk import MAX_TOKENS, Chunk, chunk_blocks, count_tokens
 from app.rag.embed import FakeEmbeddings
-from app.rag.extract import Block, extract_blocks
+from app.rag.extract import _PAGE_MARKER, Block, _boilerplate_template, extract_blocks
 
 DATASETS = Path(__file__).resolve().parents[2] / "datasets"
 SAMPLE_PDF = DATASETS / "BAJHLIP23020V012223.pdf"
@@ -74,6 +75,35 @@ class TestExtraction:
 
     def test_known_page_furniture_is_gone(self, sample_blocks: list[Block]):
         assert "Issuing Office" not in " ".join(b.text for b in sample_blocks)
+
+    def test_page_number_footers_are_dropped(self, sample_blocks: list[Block]):
+        """Footers carry the page number, so they differ on every page and exact
+        matching never sees a repeat. They previously survived as whole chunks
+        and polluted retrieval -- a search for "maternity waiting period"
+        returned "33 | P age" as a top hit."""
+        pagey = re.compile(r"p\s*a\s*g\s*e", re.IGNORECASE)
+        leaks = [b.text for b in sample_blocks if len(b.text) < 60 and pagey.search(b.text)]
+        assert not leaks, f"page markers survived: {leaks[:3]}"
+
+    @pytest.mark.parametrize(
+        ("line", "is_marker"),
+        [
+            ("33 | P age", True),  # letter-spacing splits "Page"
+            ("34 | P a g e", True),
+            ("Page 12", True),
+            ("Page 3 of 49", True),
+            ("12", True),
+            ("4.2 Waiting Periods", False),
+            ("Section 12 applies", False),
+            ("2. Any one Illness :-", False),
+        ],
+    )
+    def test_page_marker_pattern(self, line: str, is_marker: bool):
+        assert bool(_PAGE_MARKER.match(line)) is is_marker
+
+    def test_boilerplate_template_normalizes_digits(self):
+        assert _boilerplate_template("33 | P age") == _boilerplate_template("34 | P age")
+        assert _boilerplate_template("4. Accident") != _boilerplate_template("Cataract cover")
 
     def test_normalizes_private_use_glyphs(self, sample_blocks: list[Block]):
         """Symbol-font bullets arrive as PUA codepoints that carry no signal."""

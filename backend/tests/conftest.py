@@ -9,12 +9,15 @@ import asyncio
 import os
 import sys
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
+from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from alembic import command
 from app.db import get_db
 from app.main import app
 from app.models import Base
@@ -56,6 +59,22 @@ needs_pgvector = pytest.mark.skipif(
 )
 
 
+def _run_migrations(sync_url: str) -> None:
+    """Build the test schema by running the real migrations.
+
+    Not `Base.metadata.create_all()`. That creates tables from the ORM models
+    and silently omits everything a migration does in raw SQL -- the tsv trigger
+    most importantly, which meant chunks were indexed with a NULL tsv in tests
+    while working correctly in production. Migrating also means every test run
+    re-proves the migrations apply cleanly.
+    """
+    root = Path(__file__).resolve().parents[1]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", sync_url)
+    command.upgrade(cfg, "head")
+
+
 @pytest.fixture(scope="session")
 async def engine() -> AsyncGenerator:
     global _pgvector_available
@@ -69,17 +88,38 @@ async def engine() -> AsyncGenerator:
         except Exception:  # noqa: BLE001 -- absence is expected on plain Postgres
             _pgvector_available = False
 
+    # Start from empty so a re-run is not affected by a previous schema.
     async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        if _pgvector_available:
-            await conn.run_sync(Base.metadata.create_all)
-        else:
-            # Everything except `chunks`, whose vector column needs the extension.
+        await conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
+
+    if _pgvector_available:
+        # No driver rewrite: psycopg3 serves sync and async under one scheme.
+        _run_migrations(TEST_DATABASE_URL)
+    else:
+        # No vector extension, so migration 0002 cannot run. Fall back to the
+        # ORM schema minus `chunks`; the vector-dependent tests skip anyway.
+        async with eng.begin() as conn:
             tables = [t for name, t in Base.metadata.tables.items() if name != "chunks"]
             await conn.run_sync(Base.metadata.create_all, tables=tables)
 
     yield eng
     await eng.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> AsyncGenerator[None, None]:
+    """Clear rate-limit counters between tests.
+
+    Limiter state is process-global and every test shares one client key, so
+    without this the upload limit is exhausted partway through the suite and
+    unrelated tests start failing with 429. Limits stay enabled so they are
+    still exercised where a test asserts on them.
+    """
+    from app.core.ratelimit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 @pytest.fixture

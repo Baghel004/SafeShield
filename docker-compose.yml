@@ -50,5 +50,22 @@ services:
     command: >
       sh -c "alembic upgrade head && python run.py"
 
+  worker:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://safeshield:safeshield@postgres:5432/safeshield
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEBUG: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: python worker.py
+
 volumes:
   pgdata:

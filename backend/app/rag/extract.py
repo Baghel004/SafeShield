@@ -48,6 +48,14 @@ _NOISE = re.compile(
     re.IGNORECASE,
 )
 
+# Standalone page markers, which survive template matching on short documents.
+# "P age" rather than "Page" is not a typo: letter-spacing makes extract_words
+# split the word, and the same happens to "P a g e" in some of these PDFs.
+_PAGE_MARKER = re.compile(
+    r"^\s*(?:page\s*)?\d+\s*(?:\||of|/|-)?\s*(?:p\s*a\s*g\s*e|page)?\s*\d*\s*$",
+    re.IGNORECASE,
+)
+
 _MAX_HEADING_CHARS = 120
 _MAX_BOLD_HEADING_CHARS = 70
 _MAX_HEADING_WORDS = 14
@@ -201,11 +209,22 @@ def _median(values: list[float]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
+def _boilerplate_template(text: str) -> str:
+    """Collapse a line to a shape for cross-page comparison.
+
+    Page furniture usually carries the page number, so the literal text differs
+    on every page ("33 | P age", "34 | P age") and exact matching never sees a
+    repeat. Normalising digit runs to '#' makes the repetition visible.
+    """
+    return re.sub(r"\d+", "#", text).strip().lower()
+
+
 def _detect_boilerplate(pages: list[list[_Line]]) -> set[str]:
     """Identify running headers and footers by cross-page repetition.
 
-    Only the top and bottom few lines of each page are considered, so a genuine
-    heading that happens to recur mid-page is not discarded.
+    Returns a set of normalised templates, not literal lines. Only the top and
+    bottom few lines of each page are considered, so a genuine heading that
+    happens to recur mid-page is not discarded.
     """
     if len(pages) < _MIN_PAGES_FOR_BOILERPLATE:
         return set()
@@ -215,10 +234,10 @@ def _detect_boilerplate(pages: list[list[_Line]]) -> set[str]:
         margin = {ln.text for ln in lines[:_MARGIN_LINES]} | {
             ln.text for ln in lines[-_MARGIN_LINES:]
         }
-        counts.update(margin)
+        counts.update(_boilerplate_template(t) for t in margin)
 
     threshold = max(2, int(len(pages) * _BOILERPLATE_PAGE_RATIO))
-    return {text for text, n in counts.items() if n >= threshold}
+    return {tpl for tpl, n in counts.items() if n >= threshold and tpl}
 
 
 def extract_blocks(pdf_path: str | Path) -> list[Block]:
@@ -273,7 +292,11 @@ def _read_page(page: Any) -> tuple[list[_Line], list[str]]:
 
 
 def _lines_to_blocks(lines: list[_Line], page_no: int, boilerplate: set[str]) -> list[Block]:
-    kept = [ln for ln in lines if ln.text not in boilerplate]
+    kept = [
+        ln
+        for ln in lines
+        if _boilerplate_template(ln.text) not in boilerplate and not _PAGE_MARKER.match(ln.text)
+    ]
     if not kept:
         return []
 

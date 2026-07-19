@@ -47,6 +47,20 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = 96
     CHAT_MODEL: str = "gpt-4o-mini"
 
+    # --- Demo access ---
+    # Must be a syntactically valid address: EmailStr rejects reserved
+    # special-use TLDs like .local, which made /auth/me fail response
+    # validation for the demo user. Nothing is ever sent here.
+    DEMO_EMAIL: str = "demo@safeshield.app"
+
+    # --- Rate limiting ---
+    # Guards the LLM budget: one script in a loop should not be able to run up
+    # a bill. Generous enough that a human never notices.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_AUTH: str = "20/minute"
+    RATE_LIMIT_UPLOAD: str = "10/hour"
+    RATE_LIMIT_CHAT: str = "20/hour"
+
     # --- Uploads ---
     MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024
     MAX_PDF_PAGES: int = 400

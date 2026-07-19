@@ -10,7 +10,7 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import or_, select
 
 from app.config import settings
@@ -21,6 +21,7 @@ from app.core.files import (
     storage_path,
     validate_pdf_bytes,
 )
+from app.core.ratelimit import limiter
 from app.models.document import Document, DocumentStatus
 from app.schemas.document import DocumentListResponse, DocumentResponse
 
@@ -35,7 +36,9 @@ def _to_response(document: Document) -> DocumentResponse:
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)
 async def upload_document(
+    request: Request,  # noqa: ARG001 -- required by the rate limiter
     user: CurrentUser,
     db: DbSession,
     file: Annotated[UploadFile, File()],

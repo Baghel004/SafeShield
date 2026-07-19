@@ -19,8 +19,8 @@ real RAG pipeline.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | FastAPI + Postgres + JWT auth + migrations + CI | ✅ Done |
-| 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector | 🟡 Code complete; storage unverified (needs pgvector) |
+| 1 | FastAPI + Postgres + JWT auth + demo login + rate limiting + CI | ✅ Done |
+| 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector, in a background worker | ✅ Done (real embeddings pending API quota) |
 | 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ⬜ |
 | 4 | Evaluation harness + quality regression gate in CI | ⬜ |
 | 5 | React frontend | ⬜ |
@@ -123,8 +123,20 @@ pip install -e ".[dev]"
 
 cp .env.example .env    # point DATABASE_URL at your Postgres
 alembic upgrade head
-python run.py           # RELOAD=true for auto-reload
+python run.py           # API   (RELOAD=true for auto-reload)
+python worker.py        # background ingestion worker, in another shell
+
+python scripts/seed_corpus.py   # index the sample policies
 ```
+
+Use `run.py` and `worker.py` rather than invoking `uvicorn` or `arq` directly.
+Both build their event loop before anything else, because on Windows the default
+is a `ProactorEventLoop` and psycopg3 cannot run on it — the worker in particular
+would start, accept jobs, and then fail every one at the first query. They are
+no-ops on Linux and macOS, so the same commands work everywhere.
+
+A local Postgres already on 5432 will shadow the compose container silently; set
+`POSTGRES_PORT` to move it.
 
 Use `run.py` rather than invoking `uvicorn` directly. On Windows, uvicorn builds
 its event loop before importing the app, and psycopg3 cannot run on Windows'
@@ -149,9 +161,14 @@ cd backend && pytest -v
 |---|---|---|---|
 | POST | `/api/auth/register` | — | Create an account |
 | POST | `/api/auth/login` | — | Access token + refresh cookie |
+| POST | `/api/auth/demo` | — | One-click sign-in to the demo account |
 | POST | `/api/auth/refresh` | cookie | Rotate tokens |
 | POST | `/api/auth/logout` | cookie | Revoke the session family |
 | GET | `/api/auth/me` | Bearer | Current user |
+| POST | `/api/documents` | Bearer | Upload a PDF → `202`, ingested in background |
+| GET | `/api/documents` | Bearer | Own documents + shared corpus |
+| GET | `/api/documents/{id}` | Bearer | Poll ingestion status |
+| DELETE | `/api/documents/{id}` | Bearer | Delete own document (+ chunks, + file) |
 | GET | `/api/health` | — | Liveness |
 
 Access tokens go in the response body and belong in memory on the client.

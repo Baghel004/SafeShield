@@ -8,6 +8,7 @@ Token model
   rotated on every use. Reusing an already-rotated token revokes the whole family.
 """
 
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -18,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.core.deps import CurrentUser, DbSession
+from app.core.ratelimit import limiter
 from app.core.security import (
     create_access_token,
     generate_refresh_token,
@@ -86,6 +88,7 @@ async def _issue_tokens(
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def register(
     payload: RegisterRequest, request: Request, response: Response, db: DbSession
 ) -> TokenResponse:
@@ -108,6 +111,7 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def login(
     payload: LoginRequest, request: Request, response: Response, db: DbSession
 ) -> TokenResponse:
@@ -210,6 +214,33 @@ async def logout(
                 .values(revoked_at=datetime.now(UTC))
             )
     _clear_refresh_cookie(response)
+
+
+@router.post("/demo", response_model=TokenResponse)
+async def demo_login(request: Request, response: Response, db: DbSession) -> TokenResponse:
+    """One-click sign-in to a shared demo account.
+
+    A portfolio reviewer will not create an account to look at a project, so
+    requiring registration means most visitors never see it working. The demo
+    user is created on first use and can only reach the shared sample corpus,
+    since uploads are scoped per user like any other account.
+    """
+    user = await db.scalar(select(User).where(User.email == settings.DEMO_EMAIL))
+    if user is None:
+        user = User(
+            email=settings.DEMO_EMAIL,
+            # Unusable by design: the only way in is through this endpoint.
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+            full_name="Demo User",
+            is_demo=True,
+        )
+        db.add(user)
+        await db.flush()
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo access is disabled")
+
+    return await _issue_tokens(db, response, user, request)
 
 
 @router.get("/me", response_model=UserResponse)

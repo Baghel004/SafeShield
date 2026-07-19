@@ -13,7 +13,11 @@ from app.config import settings
 from app.models import Base  # noqa: F401  -- imports all models onto Base.metadata
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+
+# A caller (the test suite) may have injected a URL already; only fall back to
+# the configured one when it has not, so tests can migrate their own database.
+if not config.get_main_option("sqlalchemy.url", None):
+    config.set_main_option("sqlalchemy.url", settings.sync_database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
