@@ -98,6 +98,27 @@ and no network. Only the vectors differ.
 
 100% of chunks carry a section breadcrumb; none exceed the token cap.
 
+### Why hybrid retrieval — measured, not assumed
+
+Dense and sparse retrieval, run separately over the same 838 chunks with real
+`text-embedding-3-small` vectors. Each column wins queries the other loses:
+
+| Query | Dense (semantic) | Sparse (keyword) |
+|---|---|---|
+| "What happens if I do not make a claim for a year?" | `4. Submit claim` ❌ | `5.1 Cumulative Bonus` ✅ |
+| "Can I claim for an ambulance?" | `7. Air Ambulance` ✅ | `Well Baby Well Mother` ❌ |
+| "Is cataract surgery excluded?" | `SECTION D) EXCLUSIONS` ✅ | `SECTION D) EXCLUSIONS` ✅ |
+| "What is the limit on daily room rent?" | `42. Renewal` ❌ | `3. Must have been prescribed…` ❌ |
+
+Dense handles vocabulary mismatch — "Can I claim for an ambulance?" retrieves
+`7. Air Ambulance` at 0.62 similarity with no shared keyword. Sparse handles the
+inverse: nobody phrases a question as "cumulative bonus", but that is the clause
+that answers it, and only exact matching finds it.
+
+Row four is the honest one: neither method answers it alone. That is what the
+reranking stage and the evaluation harness in the next phases are for — this
+table is the baseline they have to beat.
+
 ---
 
 ## Running locally

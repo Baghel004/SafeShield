@@ -33,11 +33,27 @@ async def ingest_document_task(ctx: dict[str, Any], document_id: str) -> int:
     return await ingest_document(SessionLocal, doc_id, path, get_embedding_provider())
 
 
+def _redis_settings() -> RedisSettings:
+    """Redis connection settings for the worker.
+
+    arq defaults to a 1 second connect timeout with no retries, which is
+    marginal through Docker's port proxy and over any real network -- a slow
+    handshake surfaces as "Timeout connecting to server" and the worker sits
+    idle while jobs queue up behind it.
+    """
+    rs = RedisSettings.from_dsn(settings.REDIS_URL)
+    rs.conn_timeout = 10
+    rs.conn_retries = 5
+    rs.conn_retry_delay = 1
+    return rs
+
+
 class WorkerSettings:
-    """ARQ entrypoint: `arq app.worker.tasks.WorkerSettings`."""
+    """Worker configuration. Start it with `python worker.py`, not the arq CLI --
+    see worker.py for why."""
 
     functions = [ingest_document_task]
-    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    redis_settings = _redis_settings()
     max_tries = 3
     job_timeout = 1800  # a 400-page policy can take a while
     keep_result = 3600
