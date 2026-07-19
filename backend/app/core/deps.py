@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,7 @@ _CREDENTIALS_ERROR = HTTPException(
 
 
 async def get_current_user(
+    request: Request,
     db: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> User:
@@ -42,6 +43,13 @@ async def get_current_user(
     user = await db.scalar(select(User).where(User.id == user_id))
     if user is None or not user.is_active:
         raise _CREDENTIALS_ERROR
+
+    # The rate limiter keys on this (see core.ratelimit.client_key). Dependencies
+    # resolve before the decorated handler runs, so it is set by the time the
+    # limiter reads it. Without this every authenticated caller silently shared
+    # one IP-based bucket -- which meant a single office or NAT was throttled as
+    # one client, exactly what keying by user is supposed to prevent.
+    request.state.user_id = str(user.id)
 
     return user
 

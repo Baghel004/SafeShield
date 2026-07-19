@@ -45,7 +45,7 @@ async def upload_document(
 ) -> DocumentResponse:
     data = await file.read()
     try:
-        validate_pdf_bytes(data, settings.MAX_UPLOAD_BYTES)
+        validate_pdf_bytes(data, settings.MAX_UPLOAD_BYTES, settings.MAX_PDF_PAGES)
     except InvalidUploadError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)

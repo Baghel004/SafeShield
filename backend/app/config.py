@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSIONS: int = 1536
     EMBEDDING_BATCH_SIZE: int = 96
     CHAT_MODEL: str = "gpt-4o-mini"
+    # Explicit, because the SDK default is 600s. A request hanging for ten
+    # minutes holds an ARQ worker slot or an open SSE connection the whole time;
+    # far better to fail, surface it, and let the caller retry.
+    OPENAI_TIMEOUT_SECONDS: float = 30.0
+    OPENAI_MAX_RETRIES: int = 3
 
     # --- Retrieval ---
     # Candidates pulled from each retriever before fusion. Larger costs little
@@ -97,6 +102,12 @@ class Settings(BaseSettings):
     MAX_PDF_PAGES: int = 400
     UPLOAD_DIR: str = "uploads"
 
+    # --- Ingestion recovery ---
+    # How long a document may sit in `pending` before the worker assumes its job
+    # was never queued and re-drives it. Comfortably longer than a normal
+    # ingestion start, so a healthy upload is never enqueued twice.
+    INGEST_STRANDED_AFTER_SECONDS: int = 900
+
     @model_validator(mode="after")
     def _reject_insecure_defaults(self) -> Self:
         """Refuse to start in production with a development default.
@@ -125,6 +136,12 @@ class Settings(BaseSettings):
             problems.append("CORS_ORIGINS must not be '*' when credentials are allowed")
         if any(o.startswith("http://") for o in self.CORS_ORIGINS):
             problems.append("CORS_ORIGINS must use https in production")
+        if not self.OPENAI_API_KEY:
+            # Without this the provider falls back to deterministic fake vectors,
+            # indexes the whole corpus with noise and still marks every document
+            # `ready`. Retrieval then returns nonsense and nothing anywhere
+            # reports an error -- the worst possible failure mode.
+            problems.append("OPENAI_API_KEY is required in production")
 
         if problems:
             raise InsecureConfigurationError(

@@ -23,6 +23,7 @@ real RAG pipeline.
 | 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector, in a background worker | ✅ Done |
 | 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ✅ Done |
 | 4 | Evaluation harness + quality regression gate in CI | ✅ Done |
+| 4.5 | Hardening: the gaps an audit of phases 1–4 turned up | ✅ Done |
 | 5 | React frontend | ⬜ |
 | 6 | Compose + Prometheus/Grafana + deploy | ⬜ |
 | 7 | Kubernetes manifests + Helm + Terraform | ⬜ |
@@ -173,9 +174,60 @@ Those lower numbers are the useful ones. They point at four real retrieval
 misses, which cascade into every answer failure below them — that is the work
 queue, and it did not exist while the metric said everything was fine.
 
-CI runs retrieval-only on pull requests touching the RAG code (no key, no spend)
-and the full evaluation nightly, failing the build if any metric drops more than
-its tolerance below the committed baseline.
+The gate runs in CI as a job the Docker build depends on, because a workflow
+nothing depends on blocks nothing when it goes red. Pull requests are scored on
+retrieval only — no answer generation, so no spend — against the committed
+baseline. The full run including faithfulness judging happens nightly.
+
+Where no API key is available, as on a fork's pull request, embeddings are
+deterministic noise and every ranking metric is meaningless. The previous
+version silently dropped the gate and reported success. It now runs a smoke
+check instead: every answerable question must retrieve *something*. That still
+catches a dead tsv trigger, a broken migration or an empty corpus, and it fails
+rather than passing vacuously.
+
+### What an audit of the first four phases found
+
+Every phase was green — tests passing, CI clean — and eleven real gaps were
+still there. They are worth listing because none of them would have announced
+itself:
+
+**Scoping filtered after retrieval.** Asking a question about one document
+fetched the global top-6 and *then* discarded everything from other documents,
+so a scoped question returned nothing whenever other documents filled the
+ranking — including when the named document contained the answer. The filter is
+now a predicate inside both retrieval CTEs.
+
+**The pgvector test guard never ran.** `skipif(not pgvector_available)` was
+passed the *function*, so `not <function>` was permanently `False` and nothing
+ever skipped; the flag it read was also set inside a fixture that runs after
+collection, so a corrected call would have skipped everything instead. Broken in
+both directions, which is why it looked like it worked.
+
+**Per-user rate limiting was dead.** The key function preferred
+`request.state.user_id`, and nothing ever set it — so every authenticated caller
+shared one IP bucket, exactly what keying by user exists to prevent.
+
+**A missing API key was silent.** Without one the provider fell back to
+deterministic fake vectors, indexed the corpus with noise and marked every
+document `ready`. Production now refuses to start.
+
+**No `.dockerignore`.** `COPY . .` would have baked the local `.env` — real key,
+real database password — into an image layer, where deleting it later does not
+remove it. The image also shipped pytest, ruff and mypy.
+
+**The quality gate did not gate.** It lived in a workflow nothing depended on,
+its path filter missed the config file owning every retrieval knob, and without
+an API key it dropped `--check` and reported success while measuring nothing.
+
+Also: no timeouts on any OpenAI call (inheriting a 600s default by accident),
+`chat_sync` returning a bare 500 on upstream failure, `MAX_PDF_PAGES` declared
+but never enforced, uploads stranded in `pending` forever after a Redis blip,
+and no coverage measurement anywhere.
+
+The lesson worth keeping is that all eleven passed a green test suite. Tests
+prove the paths you thought of still work; they say nothing about the ones you
+never wrote down.
 
 ---
 

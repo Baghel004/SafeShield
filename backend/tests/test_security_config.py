@@ -47,6 +47,7 @@ def _prod(**overrides: object) -> Settings:
         "COOKIE_SECURE": True,
         "DEBUG": False,
         "CORS_ORIGINS": ["https://safeshield.example"],
+        "OPENAI_API_KEY": "sk-test-not-a-real-key",
         "_env_file": None,  # ignore any local .env so the test is deterministic
     }
     return Settings(**{**base, **overrides})  # type: ignore[arg-type]
@@ -75,6 +76,16 @@ class TestProductionRejectsInsecureDefaults:
         with pytest.raises(InsecureConfigurationError, match="COOKIE_SECURE"):
             _prod(COOKIE_SECURE=False)
 
+    def test_rejects_a_missing_embedding_key(self):
+        """Without a key the provider silently indexes the corpus with noise.
+
+        Nothing raises, every document reports `ready`, and retrieval returns
+        nonsense -- a deployment that looks entirely healthy while answering
+        from nothing.
+        """
+        with pytest.raises(InsecureConfigurationError, match="OPENAI_API_KEY"):
+            _prod(OPENAI_API_KEY=None)
+
     def test_rejects_debug_mode(self):
         with pytest.raises(InsecureConfigurationError, match="DEBUG"):
             _prod(DEBUG=True)
@@ -102,7 +113,7 @@ class TestProductionRejectsInsecureDefaults:
 class TestDevelopmentStaysConvenient:
     def test_defaults_are_allowed_outside_production(self):
         """The point is that the project runs locally with no setup."""
-        settings = Settings(ENV="dev", _env_file=None)  # type: ignore[call-arg]
+        settings = Settings(ENV="dev", _env_file=None)
         assert settings.JWT_SECRET == DEV_JWT_SECRET
 
     def test_generate_secret_is_long_enough_for_production(self):
@@ -112,7 +123,7 @@ class TestDevelopmentStaysConvenient:
 class TestNoSecretsInDefaults:
     def test_no_default_looks_like_a_real_credential(self):
         """Guards against someone pasting a live key in as a default."""
-        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+        settings = Settings(_env_file=None)
         assert not settings.OPENAI_API_KEY, "OPENAI_API_KEY must default to empty"
         for value in (settings.JWT_SECRET, str(settings.DATABASE_URL)):
             assert not value.startswith("sk-"), "an API key leaked into a default"

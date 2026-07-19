@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 from httpx import AsyncClient
@@ -30,14 +31,14 @@ async def _auth(client: AsyncClient, email: str = "chat@example.com") -> dict[st
 def _fake_model(monkeypatch: pytest.MonkeyPatch):
     """Replace generation with a fixed reply, so no API key or spend is needed."""
 
-    async def fake_stream(question: str, chunks: list) -> AsyncIterator[str]:  # noqa: ARG001
+    async def fake_stream(question: str, chunks: list[object]) -> AsyncIterator[str]:  # noqa: ARG001
         for piece in ("The waiting period ", "is 9 months [1]."):
             yield piece
 
     monkeypatch.setattr("app.api.chat.stream_answer", fake_stream)
 
 
-def _parse_sse(body: str) -> list[tuple[str, dict]]:
+def _parse_sse(body: str) -> list[tuple[str, dict[str, Any]]]:
     events = []
     for block in body.strip().split("\n\n"):
         name = payload = None
@@ -117,6 +118,48 @@ class TestStreaming:
         )
         assert resp.headers.get("x-accel-buffering") == "no"
         assert resp.headers.get("cache-control") == "no-cache"
+
+
+class TestUpstreamFailure:
+    """What the caller sees when the model call fails.
+
+    The two endpoints must fail differently, and both deliberately. Streaming
+    has already committed to a 200 and flushed the citations event by the time
+    generation starts, so it reports in-band; sync has sent nothing yet, so it
+    can still use a status code and should.
+    """
+
+    @pytest.fixture
+    def _broken_model(self, monkeypatch: pytest.MonkeyPatch):
+        async def boom(question: str, chunks: list[object]) -> AsyncIterator[str]:  # noqa: ARG001
+            raise RuntimeError("upstream is down")
+            yield  # pragma: no cover -- makes this an async generator
+
+        monkeypatch.setattr("app.api.chat.stream_answer", boom)
+
+    @pytest.mark.usefixtures("_broken_model")
+    async def test_sync_returns_502_not_an_unhandled_500(self, client: AsyncClient):
+        """Previously this propagated as a bare 500 with a traceback. 502 is the
+        accurate status: the upstream model failed, not the request."""
+        headers = await _auth(client)
+        resp = await client.post(
+            "/api/chat/sync", json={"question": "Is maternity covered?"}, headers=headers
+        )
+        assert resp.status_code == 502
+        assert "upstream is down" not in resp.text, "internal detail must not leak to the caller"
+
+    @pytest.mark.usefixtures("_broken_model")
+    async def test_streaming_reports_the_failure_in_band(self, client: AsyncClient):
+        headers = await _auth(client)
+        resp = await client.post(
+            "/api/chat", json={"question": "Is maternity covered?"}, headers=headers
+        )
+        # Still 200: the status line was sent before generation began.
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        names = [name for name, _ in events]
+        assert "error" in names, "a failed stream must say so rather than just stopping"
+        assert "done" not in names, "a failed stream must not claim completion"
 
 
 class TestDocumentScoping:

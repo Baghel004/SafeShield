@@ -121,7 +121,8 @@ def _git_sha() -> str:
 
 
 def load_cases() -> list[dict[str, Any]]:
-    return yaml.safe_load(GOLDEN_SET.read_text(encoding="utf-8"))
+    cases: list[dict[str, Any]] = yaml.safe_load(GOLDEN_SET.read_text(encoding="utf-8"))
+    return cases
 
 
 def score_retrieval(case: dict[str, Any], hits: list[RetrievedChunk], result: CaseResult) -> None:
@@ -349,12 +350,56 @@ def check_against_baseline(summary: dict[str, Any], retrieval_only: bool) -> int
     return 0
 
 
+def check_smoke(results: list[CaseResult]) -> int:
+    """Assert the pipeline works, without judging how well.
+
+    This is the gate for runs with no API key, where embeddings are
+    deterministic noise and every ranking metric is therefore meaningless --
+    comparing recall@5 to a baseline built with real vectors would be
+    nonsense. What is *not* meaningless without a key is the sparse half: the
+    tsvector index, the query rewrite, and the fusion arithmetic are all real.
+
+    So this checks the one thing that still means something: every answerable
+    question retrieves something. That catches the failures that actually
+    happen -- a broken migration, a dead tsv trigger, an empty corpus, a
+    malformed query -- and it catches them on fork pull requests, where the
+    previous behaviour was to skip the gate and report success.
+    """
+    answerable = [r for r in results if not r.should_refuse]
+    empty = [r for r in answerable if not r.retrieved]
+
+    print("\nSmoke check (no API key: quality is not measured):")
+    print(f"  answerable cases      {len(answerable)}")
+    print(f"  retrieved nothing     {len(empty)}")
+
+    if empty:
+        print("\nRetrieval returned no chunks for questions the corpus can answer:")
+        for r in empty:
+            print(f"  - {r.id}: {r.question}")
+        print("\nThis is a broken pipeline, not a quality regression.")
+        return 1
+
+    print("\nPipeline is functional. Quality unmeasured -- needs an API key.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--save", action="store_true", help="write results and update baseline")
     parser.add_argument("--check", action="store_true", help="fail on regression vs baseline")
     parser.add_argument("--retrieval-only", action="store_true", help="skip all LLM calls")
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="assert the pipeline returns results at all; no baseline comparison",
+    )
     args = parser.parse_args()
+
+    if args.save and args.check:
+        # --save rewrites the baseline, then --check compares against the file it
+        # just wrote, so the run approves itself and the gate always passes.
+        print("--save and --check are mutually exclusive: --save would approve its own run.")
+        return 2
 
     if not args.retrieval_only and not settings.OPENAI_API_KEY:
         print("OPENAI_API_KEY is not set. Use --retrieval-only to run without it.")
@@ -390,6 +435,8 @@ def main() -> int:
         BASELINE.write_text(json.dumps({"summary": merged, "git_sha": _git_sha()}, indent=2))
         print(f"\nSaved results and updated baseline ({_git_sha()}).")
 
+    if args.smoke:
+        return check_smoke(results)
     return check_against_baseline(summary, args.retrieval_only) if args.check else 0
 
 

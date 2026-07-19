@@ -18,6 +18,17 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+class MissingEmbeddingKeyError(RuntimeError):
+    """Raised when production is configured without an embedding API key."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "OPENAI_API_KEY is not set and ENV=prod. Refusing to fall back to "
+            "FakeEmbeddings: it would index the corpus with deterministic noise "
+            "and report every document as ready."
+        )
+
+
 class EmbeddingProvider(Protocol):
     """Turns text into vectors of `dimensions` length."""
 
@@ -45,7 +56,14 @@ class OpenAIEmbeddings:
             )
         from openai import AsyncOpenAI
 
-        self._client = AsyncOpenAI(api_key=key)
+        # Both explicit: the SDK's 600s default would let one hung batch hold an
+        # ARQ worker slot until the job timeout, and retry behaviour that matters
+        # for cost and latency should be a decision, not an inherited default.
+        self._client = AsyncOpenAI(
+            api_key=key,
+            timeout=settings.OPENAI_TIMEOUT_SECONDS,
+            max_retries=settings.OPENAI_MAX_RETRIES,
+        )
         self._model = model or settings.EMBEDDING_MODEL
         self._dimensions = dimensions or settings.EMBEDDING_DIMENSIONS
         self._batch_size = batch_size or settings.EMBEDDING_BATCH_SIZE
@@ -107,8 +125,21 @@ class FakeEmbeddings:
 
 
 def get_embedding_provider() -> EmbeddingProvider:
-    """Return the configured provider, falling back to the fake without a key."""
+    """Return the configured provider.
+
+    Falls back to the fake only outside production. The fallback is genuinely
+    useful -- CI exercises the entire ingestion path without a key -- but it is
+    silent by nature: fake vectors index cleanly, every document ends up
+    `ready`, and retrieval then returns noise with no error raised anywhere. A
+    misconfigured production deployment would look completely healthy while
+    answering from nothing, so there it is a startup failure instead.
+    """
     if settings.OPENAI_API_KEY:
         return OpenAIEmbeddings()
-    logger.warning("OPENAI_API_KEY not set -- using FakeEmbeddings (development only)")
+    if settings.ENV == "prod":
+        raise MissingEmbeddingKeyError
+    logger.warning(
+        "OPENAI_API_KEY not set -- using FakeEmbeddings. Vectors are deterministic "
+        "noise and retrieval results are meaningless. Development and tests only."
+    )
     return FakeEmbeddings()

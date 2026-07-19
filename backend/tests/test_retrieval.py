@@ -90,9 +90,9 @@ class TestHybridRetrieval:
 
         for doc_id in made:
             async with factory() as db:
-                doc = await db.get(Document, doc_id)
-                if doc:
-                    await db.delete(doc)
+                stored = await db.get(Document, doc_id)
+                if stored:
+                    await db.delete(stored)
                     await db.commit()
         async with factory() as db:
             user = await db.get(User, other_id)
@@ -125,6 +125,50 @@ class TestHybridRetrieval:
         async with corpus["factory"]() as db:
             hits = await retrieve(db, "ambulance cover", FakeEmbeddings(), user_id=None, limit=50)
         assert all(h.document_id == corpus["shared"] for h in hits)
+
+    async def test_scoping_to_a_document_still_fills_the_result_set(self, corpus):
+        """Scoping must narrow the search, not filter its output.
+
+        Both documents here are the same PDF, so their chunks are near-identical
+        and compete directly. A post-retrieval filter asks for the global top-k
+        and then discards everything from other documents, so this returned
+        empty whenever the shared copy happened to win the ranking -- a question
+        scoped to a document that demonstrably contains the answer.
+        """
+        async with corpus["factory"]() as db:
+            unscoped = await retrieve(
+                db, "ambulance cover", FakeEmbeddings(), user_id=corpus["other_user"], limit=6
+            )
+            scoped = await retrieve(
+                db,
+                "ambulance cover",
+                FakeEmbeddings(),
+                user_id=corpus["other_user"],
+                document_id=corpus["other_doc"],
+                limit=6,
+            )
+
+        assert unscoped, "precondition: the query matches something"
+        assert scoped, "scoping returned nothing from a document that contains matches"
+        assert all(h.document_id == corpus["other_doc"] for h in scoped)
+        # The point of pushing the filter into SQL: a full result set, not the
+        # remainder of one.
+        assert len(scoped) == min(6, len(unscoped))
+
+    async def test_scoping_cannot_reach_another_users_document(self, corpus):
+        """document_id narrows; it must never widen. The ownership predicate
+        still applies, so naming someone else's document returns nothing rather
+        than its contents."""
+        stranger = uuid.uuid4()
+        async with corpus["factory"]() as db:
+            hits = await retrieve(
+                db,
+                "ambulance cover",
+                FakeEmbeddings(),
+                user_id=stranger,
+                document_id=corpus["other_doc"],
+            )
+        assert hits == []
 
     async def test_sparse_contributes_for_a_natural_language_question(self, corpus):
         """plainto_tsquery ANDs every term, so a full question matched nothing

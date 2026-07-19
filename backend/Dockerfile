@@ -6,13 +6,19 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Build deps for argon2-cffi / asyncpg, removed after install to keep the image small.
+# Build deps for argon2-cffi, removed after install to keep the image small.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Dependencies resolve from pyproject alone, so this layer is cached until the
+# dependency list itself changes -- application edits do not reinstall anything.
+#
+# Runtime only: no `[dev]`. pytest, ruff and mypy have no business in a
+# production image; they enlarge it and widen the dependency surface for no
+# runtime benefit. CI installs them separately.
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install ".[dev]"
+RUN pip install --upgrade pip && pip install "."
 
 COPY . .
 

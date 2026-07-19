@@ -50,11 +50,18 @@ async def _gather_context(
         if visible is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    chunks = await retrieve(db, payload.question, get_embedding_provider(), user_id=user_id)
-
-    if payload.document_id is not None:
-        chunks = [c for c in chunks if c.document_id == payload.document_id]
-    return chunks
+    # Scoping is pushed into the query rather than applied to its results. A
+    # post-filter asks for the global top-k and then discards everything from
+    # other documents, so a question scoped to one policy returned nothing at
+    # all whenever six chunks from elsewhere happened to outrank it -- even
+    # when the requested document contained the answer.
+    return await retrieve(
+        db,
+        payload.question,
+        get_embedding_provider(),
+        user_id=user_id,
+        document_id=payload.document_id,
+    )
 
 
 def _sse(event: str, data: dict[str, object]) -> str:
@@ -120,7 +127,18 @@ async def chat_sync(
     chunks = await _gather_context(db, payload, user.id)
     grounded = has_usable_context(chunks)
 
-    parts = [token async for token in stream_answer(payload.question, chunks)]
+    try:
+        parts = [token async for token in stream_answer(payload.question, chunks)]
+    except Exception as exc:
+        # The streaming endpoint reports this in-band because its response has
+        # already begun. Here nothing has been sent yet, so a proper status is
+        # still available -- and 502 is accurate: the upstream model failed, not
+        # the request. Without this the caller got a bare 500 and a traceback.
+        logger.exception("answer generation failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Answer generation failed. Please try again.",
+        ) from exc
 
     return ChatResponse(
         answer="".join(parts),

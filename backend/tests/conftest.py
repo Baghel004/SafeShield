@@ -7,14 +7,19 @@ Set TEST_DATABASE_URL to override.
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 
 import pytest
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from alembic import command
 from app.db import get_db
@@ -44,18 +49,36 @@ TEST_DATABASE_URL = os.getenv(
 )
 
 
-_pgvector_available = False
-
-
-def pgvector_available() -> bool:
+def _probe_pgvector() -> bool:
     """Whether the test database has the pgvector extension.
 
-    CI uses the pgvector/pgvector image so this is always true there. A plain
-    local Postgres may not have it, in which case vector-dependent tests skip
-    instead of failing the entire suite.
-    """
-    return _pgvector_available
+    Probed synchronously at import time because `skipif` is evaluated during
+    collection, before any fixture has run. The previous version set a module
+    global inside the session `engine` fixture and read it from `skipif`, which
+    could only ever observe the initial `False` -- and it passed the *function*
+    to `skipif` rather than calling it, so `not <function>` was constantly False
+    and nothing was ever skipped in the first place. Both halves were broken in
+    opposite directions, which is why it looked like it worked.
 
+    CI uses the pgvector/pgvector image, so this is always true there; a plain
+    local Postgres skips the vector tests instead of failing the whole suite.
+    """
+    from sqlalchemy import create_engine
+
+    # No driver rewrite: psycopg3 serves sync and async under one URL scheme.
+    # Stripping `+psycopg` would select psycopg2, which is not installed, and
+    # the probe would report "no pgvector" on a database that has it.
+    try:
+        engine = create_engine(TEST_DATABASE_URL, connect_args={"connect_timeout": 5})
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        engine.dispose()
+    except Exception:  # noqa: BLE001 -- absence and unreachability both mean "skip"
+        return False
+    return True
+
+
+pgvector_available = _probe_pgvector()
 
 needs_pgvector = pytest.mark.skipif(
     not pgvector_available, reason="pgvector extension not available"
@@ -79,23 +102,17 @@ def _run_migrations(sync_url: str) -> None:
 
 
 @pytest.fixture(scope="session")
-async def engine() -> AsyncGenerator:
-    global _pgvector_available
-
+async def engine() -> AsyncGenerator[AsyncEngine, None]:
     eng = create_async_engine(TEST_DATABASE_URL, poolclass=None)
 
-    async with eng.begin() as conn:
-        try:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            _pgvector_available = True
-        except Exception:  # noqa: BLE001 -- absence is expected on plain Postgres
-            _pgvector_available = False
+    # _probe_pgvector only established that the extension *can* be created; the
+    # schema drop below removes it again and migration 0002 recreates it.
 
     # Start from empty so a re-run is not affected by a previous schema.
     async with eng.begin() as conn:
         await conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
 
-    if _pgvector_available:
+    if pgvector_available:
         # No driver rewrite: psycopg3 serves sync and async under one scheme.
         _run_migrations(TEST_DATABASE_URL)
     else:
@@ -110,7 +127,7 @@ async def engine() -> AsyncGenerator:
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limiter() -> AsyncGenerator[None, None]:
+def _reset_rate_limiter() -> Generator[None, None, None]:
     """Clear rate-limit counters between tests.
 
     Limiter state is process-global and every test shares one client key, so

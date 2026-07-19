@@ -1,0 +1,40 @@
+# Everything here would otherwise be baked into an image layer by `COPY . .`,
+# where deleting it later does not remove it -- layers are immutable and any
+# pushed image keeps the content forever.
+#
+# .env is the reason this file is not optional: a local .env holds the real
+# OpenAI key and database password.
+
+.env
+.env.*
+!.env.example
+
+# Virtualenvs are host-specific and enormous, and would shadow site-packages.
+.venv/
+venv/
+ENV/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Uploaded documents belong on a volume, never in the image.
+uploads/
+
+.git/
+.gitignore
+.github/
+
+# Tests and evaluation are not part of the runtime image.
+tests/
+eval/
+
+*.md
+Dockerfile
+.dockerignore

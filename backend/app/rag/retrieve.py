@@ -70,6 +70,10 @@ WITH dense AS (
            ROW_NUMBER() OVER (ORDER BY c.embedding <=> CAST(:qvec AS vector)) AS rank
     FROM chunks c
     WHERE (c.user_id = CAST(:uid AS uuid) OR c.user_id IS NULL)
+      -- Applied here, not to the results. Filtering after the fact asks for the
+      -- global top-k and then throws most of it away, so a scoped question
+      -- returns nothing whenever other documents fill the ranking.
+      AND (CAST(:doc_id AS uuid) IS NULL OR c.document_id = CAST(:doc_id AS uuid))
       AND c.embedding IS NOT NULL
     ORDER BY c.embedding <=> CAST(:qvec AS vector)
     LIMIT :candidates
@@ -87,6 +91,7 @@ sparse AS (
          -- stop-word removal and escaping, so the input stays safe.
          (SELECT replace(plainto_tsquery('english', :qtext)::text, '&', '|')::tsquery) AS q(query)
     WHERE (c.user_id = CAST(:uid AS uuid) OR c.user_id IS NULL)
+      AND (CAST(:doc_id AS uuid) IS NULL OR c.document_id = CAST(:doc_id AS uuid))
       AND q.query IS NOT NULL
       AND c.tsv @@ q.query
     ORDER BY ts_rank_cd(c.tsv, q.query) DESC
@@ -115,12 +120,15 @@ async def retrieve(
     provider: EmbeddingProvider,
     *,
     user_id: uuid.UUID | None = None,
+    document_id: uuid.UUID | None = None,
     limit: int | None = None,
     candidates: int | None = None,
 ) -> list[RetrievedChunk]:
     """Return the best chunks for a query, fused across both retrievers.
 
-    `user_id=None` searches only the shared corpus.
+    `user_id=None` searches only the shared corpus. `document_id` narrows the
+    search to a single document; it does not authorise access to it, so callers
+    must confirm the document is visible to the user first.
     """
     query = query.strip()
     if not query:
@@ -140,6 +148,7 @@ async def retrieve(
                 "qvec": str(vectors[0]),
                 "qtext": query,
                 "uid": str(user_id) if user_id else None,
+                "doc_id": str(document_id) if document_id else None,
                 "candidates": candidates,
                 "limit": limit,
                 "rrf_k": settings.RRF_K,

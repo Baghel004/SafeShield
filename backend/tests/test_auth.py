@@ -8,11 +8,12 @@ from app.api.auth import REFRESH_COOKIE
 CREDS = {"email": "asha@example.com", "password": "correct-horse-battery"}
 
 
-async def _register(client: AsyncClient, **overrides: str) -> dict:
+async def _register(client: AsyncClient, **overrides: str) -> dict[str, str]:
     payload = {**CREDS, "full_name": "Asha Rao", **overrides}
     resp = await client.post("/api/auth/register", json=payload)
     assert resp.status_code == 201, resp.text
-    return resp.json()
+    body: dict[str, str] = resp.json()
+    return body
 
 
 class TestRegister:

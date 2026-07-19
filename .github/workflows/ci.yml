@@ -63,7 +63,11 @@ jobs:
       - name: ruff format
         run: ruff format --check .
       - name: mypy
-        run: mypy app
+        # Everything, not just `app`. Restricting it there left the tests, the
+        # evaluation harness and the entrypoint scripts unchecked despite strict
+        # mode -- and those are exactly where an unnoticed type error turns into
+        # a confusing runtime failure rather than a compile-time one.
+        run: mypy app tests eval scripts run.py worker.py
 
   test:
     name: Tests
@@ -125,7 +129,69 @@ jobs:
             -c "SELECT extversion FROM pg_extension WHERE extname='vector';"
 
       - name: pytest
-        run: pytest -v --tb=short
+        run: pytest -v --tb=short --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: backend/coverage.xml
+          if-no-files-found: ignore
+
+  quality:
+    name: RAG quality gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: safeshield
+          POSTGRES_PASSWORD: safeshield
+          POSTGRES_DB: safeshield
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U safeshield"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://safeshield:safeshield@localhost:5432/safeshield
+      JWT_SECRET: eval-only-secret
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+
+      - name: Build schema
+        run: alembic upgrade head
+
+      - name: Index the sample corpus
+        run: python scripts/seed_corpus.py
+
+      # Two gates, because they measure different things. With a key, retrieval
+      # is scored against the committed baseline and a regression fails the
+      # build. Without one -- fork pull requests, where secrets are unavailable
+      # -- embeddings are deterministic noise and every ranking metric is
+      # meaningless, so the smoke gate asserts the pipeline still returns
+      # results at all. Neither case is allowed to pass by doing nothing.
+      - name: Evaluate retrieval
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "Mode: retrieval quality vs baseline"
+            python eval/run_eval.py --retrieval-only --check
+          else
+            echo "Mode: smoke only (no API key available)"
+            python eval/run_eval.py --retrieval-only --smoke
+          fi
 
   security:
     name: Security scan
@@ -149,7 +215,7 @@ jobs:
   build:
     name: Docker build
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, quality]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

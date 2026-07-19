@@ -17,9 +17,14 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.rag.retrieve import RetrievedChunk
+
+if TYPE_CHECKING:
+    from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +103,24 @@ def has_usable_context(chunks: list[RetrievedChunk]) -> bool:
     return bool(chunks) and chunks[0].score >= settings.MIN_RETRIEVAL_SCORE
 
 
+@lru_cache(maxsize=1)
+def _client() -> AsyncOpenAI:
+    """One client for the process, not one per request.
+
+    Each `AsyncOpenAI()` builds its own connection pool, so constructing one per
+    question meant a fresh TLS handshake on every answer. The timeout is
+    explicit because the SDK default is 600s, and an SSE connection held open
+    for ten minutes is indistinguishable from a hang to the user.
+    """
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        timeout=settings.OPENAI_TIMEOUT_SECONDS,
+        max_retries=settings.OPENAI_MAX_RETRIES,
+    )
+
+
 async def stream_answer(question: str, chunks: list[RetrievedChunk]) -> AsyncIterator[str]:
     """Yield the answer incrementally.
 
@@ -111,10 +134,7 @@ async def stream_answer(question: str, chunks: list[RetrievedChunk]) -> AsyncIte
     if not settings.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not set; cannot generate answers")
 
-    from openai import AsyncOpenAI
-
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    stream = await client.chat.completions.create(
+    stream = await _client().chat.completions.create(
         model=settings.CHAT_MODEL,
         max_tokens=settings.ANSWER_MAX_TOKENS,
         # Low but non-zero: this is extraction, not composition. Wording should

@@ -26,7 +26,9 @@ async def _auth(client: AsyncClient, email: str = "owner@example.com") -> dict[s
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
-def _upload(name: str = "policy.pdf", data: bytes = MINIMAL_PDF) -> dict:
+def _upload(
+    name: str = "policy.pdf", data: bytes = MINIMAL_PDF
+) -> dict[str, tuple[str, bytes, str]]:
     return {"file": (name, data, "application/pdf")}
 
 

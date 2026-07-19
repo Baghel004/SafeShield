@@ -7,6 +7,7 @@ ignored in favour of inspecting the bytes.
 
 from __future__ import annotations
 
+import io
 import re
 import uuid
 from pathlib import Path
@@ -33,8 +34,11 @@ def sanitize_filename(filename: str | None) -> str:
     return name[:255]
 
 
-def validate_pdf_bytes(data: bytes, max_bytes: int) -> None:
-    """Check size and magic bytes. Raises InvalidUploadError on failure."""
+def validate_pdf_bytes(data: bytes, max_bytes: int, max_pages: int | None = None) -> None:
+    """Check size, magic bytes and page count.
+
+    Raises InvalidUploadError on failure.
+    """
     if not data:
         raise InvalidUploadError("File is empty")
     if len(data) > max_bytes:
@@ -44,6 +48,37 @@ def validate_pdf_bytes(data: bytes, max_bytes: int) -> None:
     # Trust the bytes, not the Content-Type header or the extension.
     if not data.startswith(_PDF_MAGIC):
         raise InvalidUploadError("File is not a PDF")
+
+    if max_pages is not None:
+        _check_page_count(data, max_pages)
+
+
+def _check_page_count(data: bytes, max_pages: int) -> None:
+    """Reject documents with more pages than we are willing to embed.
+
+    Size alone is a poor proxy for cost: PDFs compress well, so a text-only
+    3000-page document sits comfortably under a 25MB cap while costing far more
+    to embed than a short scanned one. The page count is what actually predicts
+    the bill and the ingestion time, so it is what gets checked.
+
+    Done here rather than in the worker so the caller is told immediately, and
+    the file is never written to disk.
+    """
+    import pdfplumber
+
+    try:
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            pages = len(pdf.pages)
+    except InvalidUploadError:
+        raise
+    except Exception as exc:
+        # A file that starts with %PDF- but cannot be opened is corrupt or
+        # encrypted. Better to reject it now than to accept it, queue a job and
+        # fail asynchronously where the user has to poll to discover it.
+        raise InvalidUploadError("File could not be read as a PDF") from exc
+
+    if pages > max_pages:
+        raise InvalidUploadError(f"PDF has {pages} pages; the limit is {max_pages}")
 
 
 def storage_path(upload_dir: str | Path, document_id: uuid.UUID) -> Path:
