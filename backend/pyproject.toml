@@ -4,17 +4,28 @@ version = "0.1.0"
 description = "RAG-powered insurance policy assistant"
 requires-python = ">=3.12"
 dependencies = [
+    # --- web ---
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "python-multipart>=0.0.12",     # multipart/form-data uploads
+    "slowapi>=0.1.9",               # rate limiting
+    # --- database ---
     "sqlalchemy[asyncio]>=2.0.36",
-    "psycopg[binary]>=3.2",
+    "psycopg[binary]>=3.2",         # sync + async under one URL scheme
     "alembic>=1.14",
+    "pgvector>=0.3",                # Vector column type
+    # --- auth ---
     "argon2-cffi>=23.1",
     "pyjwt>=2.10",
-    "python-multipart>=0.0.12",
-    "email-validator>=2.2",
+    "email-validator>=2.2",         # EmailStr validation
+    # --- background jobs ---
+    "arq>=0.26",
+    # --- RAG pipeline ---
+    "pdfplumber>=0.11",             # PDF text and table extraction
+    "tiktoken>=0.8",                # token counting for chunk sizing
+    "openai>=1.60",                 # embeddings + answer generation
 ]
 
 [project.optional-dependencies]

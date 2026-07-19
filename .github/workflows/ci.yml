@@ -27,6 +27,37 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
       - run: pip install -e ".[dev]"
+
+      # Catches the failure mode where a package was pip-installed locally but
+      # never added to pyproject.toml: everything works on the author's machine
+      # and every job fails on a clean checkout.
+      - name: Every import resolves from declared dependencies alone
+        run: |
+          python - <<'PY'
+          import importlib, pathlib, re, sys
+          roots = ["app", "run.py", "worker.py", "scripts"]
+          stdlib = set(sys.stdlib_module_names)
+          found, missing = set(), []
+          for root in roots:
+              paths = pathlib.Path(root).rglob("*.py") if pathlib.Path(root).is_dir() else [pathlib.Path(root)]
+              for path in paths:
+                  for line in path.read_text(encoding="utf-8").splitlines():
+                      m = re.match(r"\s*(?:from|import)\s+([a-zA-Z_][\w]*)", line)
+                      if m:
+                          found.add(m.group(1))
+          for name in sorted(found - stdlib - {"app", "tests"}):
+              try:
+                  importlib.import_module(name)
+              except ImportError:
+                  missing.append(name)
+          if missing:
+              print("Imported but not installed from pyproject.toml:")
+              for name in missing:
+                  print(f"  - {name}")
+              raise SystemExit(1)
+          print(f"all {len(found - stdlib)} third-party imports resolve")
+          PY
+
       - name: ruff check
         run: ruff check .
       - name: ruff format

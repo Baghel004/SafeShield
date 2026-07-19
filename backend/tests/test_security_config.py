@@ -14,6 +14,30 @@ from app.config import DEV_DATABASE_URL, DEV_JWT_SECRET, InsecureConfigurationEr
 GOOD_SECRET = "x" * 48
 GOOD_DB = "postgresql+psycopg://user:pw@db.example.com/safeshield"
 
+# Settings reads the process environment as well as .env, and both CI and a
+# local shell export these. Without clearing them these tests assert against
+# whatever the developer happens to have exported, which is why the
+# "defaults are allowed" case passed alone and failed in the full run.
+_SETTINGS_ENV_VARS = (
+    "ENV",
+    "DEBUG",
+    "DATABASE_URL",
+    "TEST_DATABASE_URL",
+    "JWT_SECRET",
+    "COOKIE_SECURE",
+    "COOKIE_SAMESITE",
+    "CORS_ORIGINS",
+    "REDIS_URL",
+    "OPENAI_API_KEY",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert against the declared defaults, not the ambient environment."""
+    for name in _SETTINGS_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
 
 def _prod(**overrides: object) -> Settings:
     base: dict[str, object] = {
