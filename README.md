@@ -24,7 +24,7 @@ real RAG pipeline.
 | 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ✅ Done |
 | 4 | Evaluation harness + quality regression gate in CI | ✅ Done |
 | 4.5 | Hardening: the gaps an audit of phases 1–4 turned up | ✅ Done |
-| 5 | React frontend | ⬜ |
+| 5 | React frontend | ✅ Done |
 | 6 | Compose + Prometheus/Grafana + deploy | ⬜ |
 | 7 | Kubernetes manifests + Helm + Terraform | ⬜ |
 
@@ -52,7 +52,7 @@ live in `backend/app/rag/`, and its in-process index is a pgvector table.
 
 ```
 backend/     the FastAPI service — the only backend
-frontend/    static UI (React rebuild lands in phase 5)
+frontend/    React client -- auth, uploads, streamed answers with citations
 datasets/    six public insurer policies used as the shared corpus
 scripts/     database bootstrap
 ```
@@ -229,6 +229,39 @@ The lesson worth keeping is that all eleven passed a green test suite. Tests
 prove the paths you thought of still work; they say nothing about the ones you
 never wrote down.
 
+### The frontend
+
+React, TypeScript, Vite, Tailwind and TanStack Query, in `frontend/`. Three
+decisions there are worth stating, because each has a wrong version that looks
+identical until it fails.
+
+**The access token lives in memory, never `localStorage`.** Anything stored
+there is readable by any script that ends up on the page, so one XSS becomes a
+stolen session that outlives the tab. Losing the token on reload is the point —
+the httpOnly refresh cookie restores the session, and the app asks for a new
+access token before deciding whether to show the login screen. Skip that step
+and every reload looks like a logout.
+
+**Concurrent 401s share one refresh.** Refresh tokens rotate, and replaying a
+rotated one is treated as theft: the backend revokes the entire family. A page
+that fires four queries on mount would send four refresh requests the moment the
+token expired and log the user out — a bug that only appears after the access
+token's lifetime, which is exactly long enough for it never to show up while
+you are working on it. All callers await a single in-flight refresh instead.
+
+**Streaming is parsed by hand.** `EventSource` cannot be used — it only issues
+GET requests and cannot set an `Authorization` header, and the chat endpoint is
+an authenticated POST. So the body is read from `fetch` and parsed in
+`src/lib/sse.ts`, which exists because network chunk boundaries have nothing to
+do with message boundaries: one event can arrive split across three reads. Its
+tests cover split events, CRLF endings, comments, keep-alives, and a multi-byte
+character split mid-character.
+
+A failed stream arrives as an in-band `error` event, not an HTTP status,
+because by then the response has already begun — so a failure looks like a
+request that succeeded and stopped early, and watching for that event is the
+only way to tell.
+
 ---
 
 ## Running locally
@@ -259,6 +292,18 @@ python worker.py        # background ingestion worker, in another shell
 
 python scripts/seed_corpus.py   # index the sample policies
 ```
+
+Then the frontend, in another shell:
+
+```bash
+cd frontend
+npm install
+npm run dev             # http://localhost:5173
+```
+
+It proxies `/api` to the backend so the browser sees one origin — without that
+the refresh cookie is not sent and sessions fail to restore on reload while
+everything else appears to work. See `frontend/README.md`.
 
 Use `run.py` and `worker.py` rather than invoking `uvicorn` or `arq` directly.
 Both build their event loop before anything else, because on Windows the default
