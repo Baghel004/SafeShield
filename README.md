@@ -22,7 +22,7 @@ real RAG pipeline.
 | 1 | FastAPI + Postgres + JWT auth + demo login + rate limiting + CI | ✅ Done |
 | 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector, in a background worker | ✅ Done |
 | 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ✅ Done |
-| 4 | Evaluation harness + quality regression gate in CI | ⬜ |
+| 4 | Evaluation harness + quality regression gate in CI | ✅ Done |
 | 5 | React frontend | ⬜ |
 | 6 | Compose + Prometheus/Grafana + deploy | ⬜ |
 | 7 | Kubernetes manifests + Helm + Terraform | ⬜ |
@@ -143,6 +143,39 @@ compiles to `happen & make & claim & year` and matches almost nothing — the
 sparse half was silently dead for natural-language questions while looking
 healthy when tested with bare keywords. Rewriting the operators to OR restores
 it; `ts_rank_cd` still ranks by how many and how rare the matched terms are.
+
+### Measuring quality — the evaluation harness
+
+A wrong answer here is a plausible sentence, not a crash, so no unit test
+catches it. `eval/` scores retrieval and answer quality against a golden set of
+30 questions written by reading the source policies — phrased the way a user
+would phrase them ("what happens if I don't claim for a year"), not the way the
+document does ("cumulative bonus"), because that mismatch is the thing retrieval
+has to bridge.
+
+| Metric | Baseline | What it catches |
+|---|---:|---|
+| recall@5 | 84.6% | the answering text never reached the model |
+| MRR | 59.2% | it reached the model, but buried |
+| term accuracy | 50.0% | the answer omits the figure it must state |
+| faithfulness | 78.3% | claims not supported by the retrieved excerpts |
+| refusal accuracy | 90.0% | inventing an answer the corpus cannot support |
+
+**The first version of this harness reported recall@5 of 100%.** It scored a hit
+when any *filename* in the expected list appeared — and with six documents and
+two or three acceptable per question, that is nearly free. Meanwhile the model
+was answering the wrong question entirely: asked what happens after a claim-free
+year, it returned a clause about claim time limits. Scoring on the *answering
+text* instead dropped recall@5 to 84.6% and MRR from 87.8% to
+59.2%.
+
+Those lower numbers are the useful ones. They point at four real retrieval
+misses, which cascade into every answer failure below them — that is the work
+queue, and it did not exist while the metric said everything was fine.
+
+CI runs retrieval-only on pull requests touching the RAG code (no key, no spend)
+and the full evaluation nightly, failing the build if any metric drops more than
+its tolerance below the committed baseline.
 
 ---
 
