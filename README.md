@@ -20,7 +20,7 @@ real RAG pipeline.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | FastAPI + Postgres + JWT auth + demo login + rate limiting + CI | ✅ Done |
-| 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector, in a background worker | ✅ Done (real embeddings pending API quota) |
+| 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector, in a background worker | ✅ Done |
 | 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ✅ Done |
 | 4 | Evaluation harness + quality regression gate in CI | ⬜ |
 | 5 | React frontend | ⬜ |
@@ -103,13 +103,13 @@ and no network. Only the vectors differ.
 
 | Document | Pages | Chunks | Median tokens |
 |---|---:|---:|---:|
-| BAJHLIP23020V012223 | 49 | 224 | 132 |
-| CHOTGDP23004V012223 | 101 | 295 | 169 |
-| ICIHLIP22012V012223 | — | 148 | 162 |
-| HDFHLIP23024V072223 | — | 103 | 177 |
+| BAJHLIP23020V012223 | 49 | 222 | 132 |
+| CHOTGDP23004V012223 | 101 | 294 | 169 |
+| ICIHLIP22012V012223 | 31 | 147 | 162 |
+| HDFHLIP23024V072223 | 39 | 100 | 177 |
 | HDFC Poorna Suraksha | 31 | 68 | 278 |
 | EDLHLGA23009V012223 | 2 | 7 | 198 |
-| **Total** | | **845** | |
+| **Total** | | **838** | |
 
 100% of chunks carry a section breadcrumb; none exceed the token cap.
 
@@ -130,9 +130,19 @@ Dense handles vocabulary mismatch — "Can I claim for an ambulance?" retrieves
 inverse: nobody phrases a question as "cumulative bonus", but that is the clause
 that answers it, and only exact matching finds it.
 
-Row four is the honest one: neither method answers it alone. That is what the
-reranking stage and the evaluation harness in the next phases are for — this
-table is the baseline they have to beat.
+Row four is the honest one: neither method answers it alone.
+
+**After fusion, all four are answered.** Every one of those queries now retrieves
+both dense and sparse hits, and "daily room rent" surfaces *"We will pay the
+amount of rent You…"* — a chunk dense ranked 6th and sparse ranked 1st. Fusing
+them puts it on top.
+
+One subtlety cost real quality before it was caught. Postgres' `plainto_tsquery`
+**ANDs** every term, so "What happens if I do not make a claim for a year?"
+compiles to `happen & make & claim & year` and matches almost nothing — the
+sparse half was silently dead for natural-language questions while looking
+healthy when tested with bare keywords. Rewriting the operators to OR restores
+it; `ts_rank_cd` still ranks by how many and how rare the matched terms are.
 
 ---
 
@@ -173,11 +183,6 @@ no-ops on Linux and macOS, so the same commands work everywhere.
 
 A local Postgres already on 5432 will shadow the compose container silently; set
 `POSTGRES_PORT` to move it.
-
-Use `run.py` rather than invoking `uvicorn` directly. On Windows, uvicorn builds
-its event loop before importing the app, and psycopg3 cannot run on Windows'
-default `ProactorEventLoop` — `run.py` selects a compatible loop first. It is a
-no-op on Linux and macOS, so the same command works everywhere.
 
 ### Tests
 
