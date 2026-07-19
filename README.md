@@ -43,8 +43,23 @@ FastAPI ─── OpenAI (embeddings + chat)
    └── Redis  ── job queue + rate limiting
 ```
 
-One backend service. The previous Node layer was a pass-through proxy with no
-logic of its own and has been removed.
+**One backend service.** The original project ran two: a Node/Express proxy and
+a separate FastAPI service holding a FAISS index in memory. Both are gone. The
+Node layer was a pass-through with no logic of its own, and the FAISS service
+has been replaced piece by piece — its extraction, chunking and embedding now
+live in `backend/app/rag/`, and its in-process index is a pgvector table.
+
+```
+backend/     the FastAPI service — the only backend
+frontend/    static UI (React rebuild lands in phase 5)
+datasets/    six public insurer policies used as the shared corpus
+scripts/     database bootstrap
+```
+
+The in-memory FAISS index was also the reason the old service could not scale:
+every replica would have held a different index, so an upload indexed by one pod
+was invisible to the next request. Moving the vectors into Postgres is what makes
+horizontal scaling possible at all.
 
 ### Design decisions
 
