@@ -86,6 +86,12 @@ testpaths = ["tests"]
 [tool.coverage.run]
 source = ["app"]
 omit = ["app/compat.py"]  # event-loop plumbing, exercised by running at all
+# SQLAlchemy's async layer runs application code inside greenlets. Without this
+# the tracer loses those frames and every endpoint body that awaits the database
+# is reported as unexecuted -- list/get/delete were all thoroughly tested and
+# all showed uncovered. It also measured differently per platform, which is how
+# a floor set from a local run failed in CI.
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 # A floor, not a target. It exists so a change that guts test coverage fails
