@@ -1,0 +1,60 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "safeshield.fullname" . }}-api
+  labels:
+    {{- include "safeshield.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "safeshield.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Default-deny with two exceptions. Without a policy every pod in the
+    # cluster can reach the API directly, bypassing the ingress and with it the
+    # TLS termination and any WAF in front.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "safeshield.fullname" . }}-worker
+  labels:
+    {{- include "safeshield.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "safeshield.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  policyTypes:
+    - Ingress
+  ingress:
+    # Nothing routes traffic to the worker -- it pulls from the queue -- so the
+    # only thing that needs in is Prometheus.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9100
+{{- end }}

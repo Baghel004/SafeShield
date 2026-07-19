@@ -18,10 +18,10 @@ from app.core.deps import CurrentUser, DbSession
 from app.core.files import (
     InvalidUploadError,
     sanitize_filename,
-    storage_path,
     validate_pdf_bytes,
 )
 from app.core.ratelimit import limiter
+from app.core.storage import get_storage
 from app.models.document import Document, DocumentStatus
 from app.schemas.document import DocumentListResponse, DocumentResponse
 
@@ -62,8 +62,8 @@ async def upload_document(
     db.add(document)
     await db.flush()
 
-    # Path is generated from the document id, so the client cannot influence it.
-    storage_path(settings.UPLOAD_DIR, document.id).write_bytes(data)
+    # Keyed by the document id, so the client cannot influence where it lands.
+    get_storage().put(document.id, data)
 
     await _enqueue_ingestion(document.id)
     return _to_response(document)
@@ -127,8 +127,7 @@ async def delete_document(document_id: uuid.UUID, user: CurrentUser, db: DbSessi
 
     await db.delete(document)  # chunks cascade
 
-    path = storage_path(settings.UPLOAD_DIR, document_id)
-    path.unlink(missing_ok=True)
+    get_storage().delete(document_id)
 
 
 async def _get_visible(db: DbSession, document_id: uuid.UUID, user_id: uuid.UUID) -> Document:

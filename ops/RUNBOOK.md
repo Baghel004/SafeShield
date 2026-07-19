@@ -99,16 +99,139 @@ replaces chunks rather than duplicating them.
 
 ### Scaling past one replica
 
-Two things in this setup assume a single API container:
+This compose setup is single-host and single-replica by design. Two things
+would break if it were not, and both are fixed in the Kubernetes path below
+rather than here:
 
-- **Migrations run in the API's start command.** With replicas that is a race.
-  Move `alembic upgrade head` to a one-shot job that completes before the
-  rollout starts.
-- **Uploaded PDFs are written to a container-local directory.** Two replicas
-  will not see each other's files, so an upload handled by one and ingested by
-  another fails. Mount shared storage or move to object storage.
+- **Migrations run in the API's start command.** With more than one replica two
+  pods start together and both run `alembic upgrade head` against the same
+  database. The Helm chart runs them as a pre-upgrade hook that completes first.
+- **Uploads go to a container-local directory.** A file written by one replica
+  is invisible to the others and to the worker. `STORAGE_BACKEND=s3` moves them
+  to object storage; the Helm chart defaults to it.
 
-Neither is a problem at one replica, and both are silent when they become one.
+Both are silent when they become a problem, which is why the chart defaults to
+two API replicas — a configuration that would expose them immediately.
+
+---
+
+## Deploying to Kubernetes (AWS)
+
+`deploy/terraform` provisions the infrastructure; `deploy/helm/safeshield`
+deploys the application onto it.
+
+**What has been verified here, and what has not.** The chart lints, renders 14
+resources, and every one validates against the Kubernetes 1.30 schema including
+the ServiceMonitor CRDs. The Terraform is formatted, initialises against the
+real AWS provider and modules, and validates. None of it has been applied to a
+live cluster or a real AWS account — that needs credentials and costs money, so
+the first apply is yours. Treat the steps below as reviewed, not rehearsed.
+
+### 1. Infrastructure
+
+```bash
+cd deploy/terraform
+terraform init
+terraform plan      # read this properly the first time
+terraform apply
+```
+
+Creates a VPC across two AZs, an EKS cluster, RDS Postgres 16 (pgvector is
+available from 15.2; the migration issues `CREATE EXTENSION vector`),
+ElastiCache Redis, an S3 bucket for uploads, ECR, and two IRSA roles.
+
+Rough cost at these defaults: **$130–160/month**, dominated by the EKS control
+plane (~$73) and the NAT gateway (~$32). `single_nat_gateway = true` is already
+set to halve the second. This is not a cheap way to run a demo — it is a way to
+demonstrate the deployment shape.
+
+### 2. Secrets
+
+Terraform creates the Secrets Manager entries but never writes the application
+values into them, because anything Terraform sets lands in state in plaintext:
+
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id safeshield-prod/app \
+  --secret-string '{"JWT_SECRET":"<48 random bytes>","OPENAI_API_KEY":"sk-..."}'
+```
+
+The database and Redis URLs are written by Terraform, since it generates the
+password and there is no way for it not to know it.
+
+Then get both into the cluster as `safeshield-secrets`. External Secrets
+Operator is the reason `external_secrets_role_arn` exists; `kubectl create
+secret generic` works for a first deploy.
+
+### 3. Deploy
+
+```bash
+aws eks update-kubeconfig --region ap-south-1 --name safeshield-prod
+kubectl create namespace safeshield
+
+helm upgrade --install safeshield deploy/helm/safeshield \
+  --namespace safeshield \
+  --set image.repository=$(terraform -chdir=deploy/terraform output -raw ecr_repository_url) \
+  --set image.tag=$(git rev-parse --short HEAD) \
+  --set config.storage.bucket=$(terraform -chdir=deploy/terraform output -raw uploads_bucket) \
+  --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=$(terraform -chdir=deploy/terraform output -raw app_role_arn) \
+  --set ingress.host=api.safeshield.example \
+  --set 'config.corsOrigins[0]=https://safeshield.example' \
+  --wait
+```
+
+`image.tag` has no default and the chart **fails to render** without it. That is
+deliberate: `latest` makes a rollout unreproducible and a rollback meaningless,
+because the tag has already moved to the thing you are rolling back from.
+
+Migrations run as a `pre-install,pre-upgrade` hook that must complete before any
+new pod starts. They used to be in the API container's start command, which is a
+race the moment there is more than one replica.
+
+### 4. Verify
+
+```bash
+kubectl -n safeshield get pods
+kubectl -n safeshield logs job/safeshield-migrate      # only if the hook failed
+kubectl -n safeshield port-forward svc/safeshield-api 8080:80
+
+curl -fsS localhost:8080/api/ready | jq     # database and redis both "ok"
+```
+
+Then seed the corpus, or every question refuses:
+
+```bash
+kubectl -n safeshield exec deploy/safeshield-api -- python scripts/seed_corpus.py
+```
+
+### Things worth knowing before the first apply
+
+- **`STORAGE_BACKEND=s3` is not optional above one replica.** With `local`, an
+  upload handled by one pod is invisible to the worker and to every other pod,
+  and ingestion fails with a missing file — only under the horizontal scaling
+  the chart is built for. The `uploads` volume in the pod spec is an `emptyDir`
+  on purpose: it is scratch space for the temporary copy an S3 object is
+  downloaded into, not storage.
+- **`automountServiceAccountToken: false`** is set on the service account. IRSA
+  should be unaffected — the EKS webhook injects its own projected token with an
+  `sts.amazonaws.com` audience — but this is the first thing to flip if a pod
+  cannot reach S3.
+- **NetworkPolicy needs the VPC CNI's `enableNetworkPolicy`**, which the
+  Terraform sets. Without it the policies are accepted by the API server and
+  silently ignored, which is worse than not having them.
+- **The Ingress needs the AWS Load Balancer Controller** installed in the
+  cluster; the annotations assume it. Without it the Ingress is created and
+  never gets an address, with no obvious error.
+
+### Rolling back
+
+```bash
+helm rollback safeshield --namespace safeshield
+```
+
+Schema changes do not roll back with it. Migrations here are additive, so the
+previous image almost always runs against the newer schema — prefer rolling the
+image back and leaving the database alone.
 
 ---
 

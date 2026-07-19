@@ -26,7 +26,7 @@ real RAG pipeline.
 | 4.5 | Hardening: the gaps an audit of phases 1–4 turned up | ✅ Done |
 | 5 | React frontend | ✅ Done |
 | 6 | Compose + Prometheus/Grafana + deploy | ✅ Done |
-| 7 | Kubernetes manifests + Helm + Terraform | ⬜ |
+| 7 | Kubernetes manifests + Helm + Terraform | ✅ Done |
 
 ---
 
@@ -55,6 +55,7 @@ backend/     the FastAPI service — the only backend
 frontend/    React client — auth, uploads, streamed answers with citations
 datasets/    six public insurer policies used as the shared corpus
 ops/         Prometheus rules, Grafana dashboards, deployment runbook
+deploy/      Helm chart and Terraform for EKS
 scripts/     database bootstrap
 ```
 
@@ -301,6 +302,47 @@ restarts every replica at once.
 
 Operational procedures — deploying, and what to check when answers go wrong,
 uploads stall or spend spikes — are in [`ops/RUNBOOK.md`](ops/RUNBOOK.md).
+
+### Kubernetes and AWS
+
+`deploy/terraform` builds a VPC, EKS, RDS Postgres 16, ElastiCache Redis, S3,
+ECR and two IRSA roles. `deploy/helm/safeshield` deploys onto it: API and worker
+deployments, migration hook, service, ingress, HPA, PDB, ServiceMonitors and
+network policies.
+
+**Building this forced a real application change.** The runbook already noted
+that two things break above one replica, and a chart defaulting to two replicas
+would have shipped both:
+
+- **Uploads were written to a container-local directory.** With two API pods and
+  a worker as a third process, a file written by one is invisible to the others
+  and ingestion fails with a missing file — only under the horizontal scaling
+  the chart exists for. Storage is now an interface, the same shape as the
+  embedding provider: local disk for development, S3 in the cluster. The read
+  side is a context manager, because extraction needs a real path and a remote
+  object has to be materialised first.
+- **Migrations ran in the API's start command**, which is a race the moment two
+  pods start together. They are now a `pre-upgrade` hook that must complete
+  before any new pod starts.
+
+A few other decisions worth naming. `image.tag` has no default and the chart
+**refuses to render** without one — `latest` makes a rollout unreproducible and
+a rollback meaningless, since the tag has already moved to the thing you are
+rolling back from; CI asserts that this guard still fails. Liveness points at
+`/api/health` and readiness at `/api/ready`, because a liveness probe that
+touches Postgres turns a brief database blip into every replica restarting at
+once. The worker uses `Recreate` rather than a rolling update, since overlapping
+pods would have two workers competing over the same queue while one is being
+torn down. And IRSA replaces static AWS keys, so there is no long-lived
+credential in a Secret to rotate or leak.
+
+**What is verified, and what is not.** The chart lints, renders 14 resources,
+and all 14 validate against the Kubernetes 1.30 schema including the
+ServiceMonitor CRDs. The Terraform is formatted, initialises against the real
+AWS provider and modules, and validates. CI runs all of that. None of it has
+been applied to a live cluster or a real AWS account — that needs credentials
+and costs roughly $130–160/month, so the first apply is a deliberate act, not
+something to leave running.
 
 ---
 

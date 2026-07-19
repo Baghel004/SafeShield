@@ -24,6 +24,10 @@ dependencies = [
     "arq>=0.26",
     # --- observability ---
     "prometheus-client>=0.21",
+    # --- object storage ---
+    # Required once more than one replica exists: uploads written to a
+    # container-local directory are invisible to every other pod.
+    "boto3>=1.35",
     # --- RAG pipeline ---
     "pdfplumber>=0.11",             # PDF text and table extraction
     "tiktoken>=0.8",                # token counting for chunk sizing
@@ -69,6 +73,13 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["alembic.*"]
 ignore_errors = true
+
+# boto3 ships no type information and botocore's stubs are a separate,
+# very large package. The storage module is small and fully annotated at its
+# own boundary, so untyped calls into the SDK are the only gap.
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
 
 # Tests are type-checked, but not required to annotate every test function and
 # fixture. Annotating `def test_x() -> None` 150 times finds no bugs; what does

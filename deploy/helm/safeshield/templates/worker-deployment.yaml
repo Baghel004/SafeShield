@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "safeshield.fullname" . }}-worker
+  labels:
+    {{- include "safeshield.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  strategy:
+    # Recreate, not RollingUpdate. The worker holds long jobs -- a 400-page
+    # policy takes minutes -- and overlapping old and new pods during a deploy
+    # means two workers competing for the same queue while one is being torn
+    # down. ARQ retries anything interrupted, so a brief gap is cheaper than
+    # duplicated embedding calls.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "safeshield.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "safeshield.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "safeshield.serviceAccountName" . }}
+      securityContext:
+        {{- include "safeshield.securityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Ingestion jobs are long. Give an interrupted one time to finish rather
+      # than killing it mid-embedding, which wastes the spend already incurred.
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: worker
+          image: {{ include "safeshield.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "safeshield.containerSecurityContext" . | nindent 12 }}
+          command: ["python", "worker.py"]
+          ports:
+            # The worker has no HTTP server of its own; prometheus_client runs
+            # a small one purely so ingestion metrics can be scraped.
+            - name: metrics
+              containerPort: 9100
+          env:
+            {{- include "safeshield.env" . | nindent 12 }}
+          # No HTTP liveness endpoint exists here, and the metrics port is a
+          # reasonable proxy: if that thread has died the process is unhealthy.
+          livenessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: uploads
+              mountPath: /app/uploads
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: uploads
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

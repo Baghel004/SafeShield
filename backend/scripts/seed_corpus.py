@@ -20,8 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import select  # noqa: E402
 
 from app.compat import asyncio_run  # noqa: E402
-from app.config import settings  # noqa: E402
-from app.core.files import storage_path  # noqa: E402
+from app.core.storage import get_storage  # noqa: E402
 from app.models.document import Document, DocumentStatus  # noqa: E402
 from app.rag.embed import get_embedding_provider  # noqa: E402
 from app.rag.ingest import ingest_document  # noqa: E402
@@ -66,16 +65,17 @@ async def seed(force: bool) -> int:
                 db.add(document)
             await db.flush()
 
-            # Copy into the upload store so re-ingestion works the same way it
-            # does for a user upload.
-            dest = storage_path(settings.UPLOAD_DIR, document.id)
-            if not dest.exists() or force:
-                dest.write_bytes(pdf.read_bytes())
+            # Copy into the configured store so re-ingestion works the same
+            # way it does for a user upload -- including via S3 when that is
+            # what the deployment uses.
+            storage = get_storage()
+            storage.put(document.id, pdf.read_bytes())
 
             await db.commit()  # release before the slow work
 
             logger.info("INGEST %s ...", pdf.name)
-            count = await ingest_document(SessionLocal, document.id, dest, provider)
+            with storage.as_local_path(document.id) as dest:
+                count = await ingest_document(SessionLocal, document.id, dest, provider)
             total_chunks += count
             await db.refresh(document)
             logger.info("  -> %d chunks, %d pages", count, document.page_count)

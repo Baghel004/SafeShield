@@ -1,0 +1,58 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "safeshield.fullname" . }}-migrate
+  labels:
+    {{- include "safeshield.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    # A hook, not a plain Job: Helm waits for this to succeed before creating
+    # or updating anything else, and aborts the release if it fails. Migrations
+    # used to run in the API container's start command, which races the moment
+    # there is more than one replica -- two pods starting together both run
+    # `alembic upgrade head` against the same database.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    # Kept on failure so the logs survive for diagnosis; a successful run is
+    # deleted so the next upgrade can create the Job again under the same name.
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "safeshield.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "safeshield.serviceAccountName" . }}
+      securityContext:
+        {{- include "safeshield.securityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "safeshield.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "safeshield.containerSecurityContext" . | nindent 12 }}
+          command: ["alembic", "upgrade", "head"]
+          env:
+            {{- include "safeshield.env" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

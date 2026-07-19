@@ -48,3 +48,16 @@ Thumbs.db
 # ------------------------------------------------------------------- LOCAL
 *.log
 .claude/
+
+# --- Terraform ---
+# Downloaded providers and modules: hundreds of megabytes, re-fetched by
+# `terraform init`, and platform-specific.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+# State can hold generated passwords in plaintext. Use the S3 backend.
+crash.log
+# tfvars routinely hold secrets; the example documents the shape instead.
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl

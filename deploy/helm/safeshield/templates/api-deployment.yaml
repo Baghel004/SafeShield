@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "safeshield.fullname" . }}-api
+  labels:
+    {{- include "safeshield.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never drop below the current capacity during a deploy. maxUnavailable:1
+      # on a two-replica service halves capacity mid-rollout.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "safeshield.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "safeshield.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+        # Roll the pods when configuration changes. Without this a `helm
+        # upgrade` that only alters the ConfigMap leaves every pod running the
+        # old values, and the deploy silently does nothing.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "safeshield.serviceAccountName" . }}
+      securityContext:
+        {{- include "safeshield.securityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "safeshield.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "safeshield.containerSecurityContext" . | nindent 12 }}
+          command: ["python", "run.py"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+          env:
+            {{- include "safeshield.env" . | nindent 12 }}
+
+          # Liveness and readiness are deliberately different endpoints.
+          # Liveness asks "is this process alive" -- failing it restarts the
+          # pod. Readiness asks "can it serve right now" -- failing it only
+          # removes the pod from the Service. Pointing liveness at a check that
+          # touches Postgres means a brief database blip restarts every replica
+          # at once, turning a recoverable dependency failure into an outage.
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 2
+          # Gives a slow first start room without loosening liveness once the
+          # pod is up: an exhausted startupProbe is what restarts a hung boot.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            # The root filesystem is read-only, so anything that writes needs an
+            # explicit mount. These are the only two.
+            - name: tmp
+              mountPath: /tmp
+            - name: uploads
+              mountPath: /app/uploads
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: uploads
+          # emptyDir, not a persistent volume, and that is correct *because*
+          # storage is S3: this is only scratch space for the temporary copy a
+          # remote object is downloaded into. With storage.backend=local it
+          # would be a bug -- the data would die with the pod.
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

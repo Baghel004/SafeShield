@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "safeshield.fullname" . }}-config
+  labels:
+    {{- include "safeshield.labels" . | nindent 4 }}
+data:
+  # Not mounted. Environment comes from the shared `safeshield.env` helper, so
+  # the API, worker and migration job cannot drift apart. This exists so the
+  # deployments can checksum it and roll pods when configuration changes --
+  # without that, a `helm upgrade` altering only config leaves every pod on the
+  # old values and appears to do nothing.
+  ENV: {{ .Values.config.env | quote }}
+  JSON_LOGS: {{ .Values.config.jsonLogs | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | toJson | quote }}
+  STORAGE_BACKEND: {{ .Values.config.storage.backend | quote }}
+  S3_BUCKET: {{ .Values.config.storage.bucket | quote }}
+  S3_PREFIX: {{ .Values.config.storage.prefix | quote }}
+  RETRIEVAL_TOP_K: {{ .Values.config.retrieval.topK | quote }}
+  RETRIEVAL_CANDIDATES: {{ .Values.config.retrieval.candidates | quote }}
+  EMBEDDING_MODEL: {{ .Values.config.openai.embeddingModel | quote }}
+  CHAT_MODEL: {{ .Values.config.openai.chatModel | quote }}

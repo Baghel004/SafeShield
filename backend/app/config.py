@@ -110,6 +110,19 @@ class Settings(BaseSettings):
     MAX_PDF_PAGES: int = 400
     UPLOAD_DIR: str = "uploads"
 
+    # --- Document storage ---
+    # "local" writes to UPLOAD_DIR, which is correct for development and any
+    # single replica with a persistent volume. With more than one replica an
+    # upload handled by one pod is invisible to the next, and the ingestion
+    # worker is a third process again -- so anything horizontally scaled needs
+    # "s3". Credentials are never configured here: on EKS the pod assumes a
+    # role through IRSA and boto3 finds it.
+    STORAGE_BACKEND: Literal["local", "s3"] = "local"
+    S3_BUCKET: str | None = None
+    S3_PREFIX: str = "documents"
+    # Set only to point at something other than AWS -- MinIO in a test, or R2.
+    S3_ENDPOINT_URL: str | None = None
+
     # --- Ingestion recovery ---
     # How long a document may sit in `pending` before the worker assumes its job
     # was never queued and re-drives it. Comfortably longer than a normal
@@ -144,6 +157,8 @@ class Settings(BaseSettings):
             problems.append("CORS_ORIGINS must not be '*' when credentials are allowed")
         if any(o.startswith("http://") for o in self.CORS_ORIGINS):
             problems.append("CORS_ORIGINS must use https in production")
+        if self.STORAGE_BACKEND == "s3" and not self.S3_BUCKET:
+            problems.append("S3_BUCKET is required when STORAGE_BACKEND=s3")
         if not self.OPENAI_API_KEY:
             # Without this the provider falls back to deterministic fake vectors,
             # indexes the whole corpus with noise and still marks every document

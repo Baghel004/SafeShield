@@ -251,6 +251,52 @@ jobs:
             echo "ok $f"
           done
 
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Helm chart lints and renders
+        run: |
+          helm lint deploy/helm/safeshield \
+            --set image.tag=ci --set config.storage.bucket=b --set ingress.host=ci.example.com
+          helm template safeshield deploy/helm/safeshield \
+            --set image.tag=ci \
+            --set config.storage.bucket=safeshield-uploads \
+            --set ingress.host=api.example.com \
+            --set 'config.corsOrigins[0]=https://example.com' > /tmp/rendered.yaml
+          grep -c '^kind:' /tmp/rendered.yaml
+
+      - name: Chart refuses a mutable image tag
+        # The guard is the point: a moving tag makes a rollback meaningless,
+        # because the tag has already moved to the thing being rolled back
+        # from. Asserting the failure keeps someone from "fixing" it later.
+        run: |
+          if helm template safeshield deploy/helm/safeshield \
+               --set config.storage.bucket=b --set ingress.host=x.example.com 2>/dev/null; then
+            echo "chart rendered without an explicit image.tag -- the guard is gone"
+            exit 1
+          fi
+          echo "ok: rendering fails without an explicit tag"
+
+      - name: Manifests match the Kubernetes schema
+        run: |
+          docker run --rm -v /tmp:/work -w /work ghcr.io/yannh/kubeconform:latest \
+            -strict -summary -kubernetes-version 1.30.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            rendered.yaml
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.3
+
+      - name: Terraform is formatted and valid
+        working-directory: deploy/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+
   security:
     name: Security scan
     runs-on: ubuntu-latest

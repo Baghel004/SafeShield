@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 
 from app.config import settings
 from app.core import metrics
-from app.core.files import storage_path
+from app.core.storage import get_storage
 from app.db import SessionLocal
 from app.models.document import Document, DocumentStatus
 from app.rag.embed import get_embedding_provider
@@ -35,8 +35,10 @@ async def ingest_document_task(ctx: dict[str, Any], document_id: str) -> int:
     across the embedding call -- so no session is opened here.
     """
     doc_id = uuid.UUID(document_id)
-    path = storage_path(settings.UPLOAD_DIR, doc_id)
-    return await ingest_document(SessionLocal, doc_id, path, get_embedding_provider())
+    # The storage backend decides whether this is a real path or a temporary
+    # copy pulled from object storage; ingestion does not need to know which.
+    with get_storage().as_local_path(doc_id) as path:
+        return await ingest_document(SessionLocal, doc_id, path, get_embedding_provider())
 
 
 async def requeue_stranded_documents(ctx: dict[str, Any]) -> int:
