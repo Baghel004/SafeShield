@@ -11,7 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api import auth, documents
+from app.api import auth, chat, documents
 from app.config import settings
 from app.core.ratelimit import limiter
 from app.db import engine
@@ -64,6 +64,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(documents.router)
+app.include_router(chat.router)
 
 
 @app.get("/api/health", tags=["ops"])

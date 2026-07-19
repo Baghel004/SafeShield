@@ -21,7 +21,7 @@ real RAG pipeline.
 |---|---|---|
 | 1 | FastAPI + Postgres + JWT auth + demo login + rate limiting + CI | ✅ Done |
 | 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector, in a background worker | ✅ Done (real embeddings pending API quota) |
-| 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ⬜ |
+| 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ✅ Done |
 | 4 | Evaluation harness + quality regression gate in CI | ⬜ |
 | 5 | React frontend | ⬜ |
 | 6 | Compose + Prometheus/Grafana + deploy | ⬜ |
@@ -201,6 +201,8 @@ cd backend && pytest -v
 | POST | `/api/auth/refresh` | cookie | Rotate tokens |
 | POST | `/api/auth/logout` | cookie | Revoke the session family |
 | GET | `/api/auth/me` | Bearer | Current user |
+| POST | `/api/chat` | Bearer | Ask a question → SSE stream of the answer |
+| POST | `/api/chat/sync` | Bearer | Same, non-streaming (tests / eval harness) |
 | POST | `/api/documents` | Bearer | Upload a PDF → `202`, ingested in background |
 | GET | `/api/documents` | Bearer | Own documents + shared corpus |
 | GET | `/api/documents/{id}` | Bearer | Poll ingestion status |

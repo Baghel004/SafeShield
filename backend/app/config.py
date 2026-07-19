@@ -61,6 +61,23 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = 96
     CHAT_MODEL: str = "gpt-4o-mini"
 
+    # --- Retrieval ---
+    # Candidates pulled from each retriever before fusion. Larger costs little
+    # (both are index scans) and gives RRF more to work with.
+    RETRIEVAL_CANDIDATES: int = 30
+    # Chunks handed to the model. Enough for a grounded answer, few enough that
+    # the prompt stays cheap and the model does not lose the question in context.
+    RETRIEVAL_TOP_K: int = 6
+    # RRF damping. 60 is the value from the original paper and is not sensitive;
+    # it mainly stops rank 1 from dominating rank 2.
+    RRF_K: int = 60
+
+    # --- Answer generation ---
+    # Below this fused score the corpus almost certainly does not contain the
+    # answer, and the model is told to say so rather than reach.
+    MIN_RETRIEVAL_SCORE: float = 0.01
+    ANSWER_MAX_TOKENS: int = 800
+
     # --- Demo access ---
     # Must be a syntactically valid address: EmailStr rejects reserved
     # special-use TLDs like .local, which made /auth/me fail response
