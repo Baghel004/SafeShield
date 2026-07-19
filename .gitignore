@@ -1,4 +1,25 @@
-# Python
+# ---------------------------------------------------------------- SECRETS
+# Never commit these. .env.example documents every variable with placeholders.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+secrets.*
+.secrets/
+
+# ------------------------------------------------- USER-UPLOADED DOCUMENTS
+# Uploaded policies are personal data and must not enter the repository.
+# Sample policies under datasets/ are public insurer documents and are tracked.
+backend/uploads/
+backend-python/uploads/
+backend-python/persist/
+uploads/
+
+# ------------------------------------------------------------------ PYTHON
 __pycache__/
 *.py[cod]
 .venv/
@@ -9,25 +30,21 @@ venv/
 .ruff_cache/
 .coverage
 htmlcov/
+.tox/
 
-# Node
+# -------------------------------------------------------------------- NODE
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
-# Secrets
-.env
-.env.local
-*.pem
-
-# Uploads / generated artifacts
-backend/uploads/
-backend-python/venv/
-backend-python/persist/
-backend-python/uploads/
-
-# Editors / OS
+# -------------------------------------------------------------- EDITORS/OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+*.swp
+
+# ------------------------------------------------------------------- LOCAL
+*.log
+.claude/

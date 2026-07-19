@@ -1,10 +1,26 @@
-"""Application settings, loaded from environment variables."""
+"""Application settings.
 
+Every secret is supplied by the environment; nothing sensitive is committed.
+The defaults below exist only so the project runs locally out of the box, and
+`ENV=prod` rejects each one of them at startup -- see `_reject_insecure_defaults`.
+Failing to boot is the correct response to a missing secret: the alternative is
+running in production with a publicly-known signing key.
+"""
+
+import secrets
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import PostgresDsn
+from pydantic import PostgresDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Sentinels for values that are safe locally and unacceptable in production.
+DEV_JWT_SECRET = "dev-only-insecure-secret-change-me"  # noqa: S105
+DEV_DATABASE_URL = "postgresql+psycopg://safeshield:safeshield@localhost:5432/safeshield"
+
+
+class InsecureConfigurationError(RuntimeError):
+    """Raised when production is asked to run with a development default."""
 
 
 class Settings(BaseSettings):
@@ -16,13 +32,11 @@ class Settings(BaseSettings):
     # --- Database ---
     # psycopg3 serves both the async app engine and sync Alembic from this one URL.
     # Typed as PostgresDsn so a malformed URL fails at startup, not on first query.
-    DATABASE_URL: PostgresDsn = PostgresDsn(
-        "postgresql+psycopg://safeshield:safeshield@localhost:5432/safeshield"
-    )
+    DATABASE_URL: PostgresDsn = PostgresDsn(DEV_DATABASE_URL)
 
     # --- Auth ---
     # Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
-    JWT_SECRET: str = "dev-only-insecure-secret-change-me"  # noqa: S105
+    JWT_SECRET: str = DEV_JWT_SECRET
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_TTL_MINUTES: int = 15
     REFRESH_TOKEN_TTL_DAYS: int = 30
@@ -65,6 +79,49 @@ class Settings(BaseSettings):
     MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024
     MAX_PDF_PAGES: int = 400
     UPLOAD_DIR: str = "uploads"
+
+    @model_validator(mode="after")
+    def _reject_insecure_defaults(self) -> Self:
+        """Refuse to start in production with a development default.
+
+        Each of these is silent when wrong: a shared signing key means anyone
+        can mint a valid token, a non-Secure cookie is sent over plain HTTP, and
+        a wildcard CORS origin with credentials enabled lets any site call the
+        API as the logged-in user. A crash at boot is far cheaper than any of
+        them being discovered later.
+        """
+        if self.ENV != "prod":
+            return self
+
+        problems: list[str] = []
+        if self.JWT_SECRET == DEV_JWT_SECRET:
+            problems.append("JWT_SECRET is the development default")
+        if len(self.JWT_SECRET) < 32:
+            problems.append("JWT_SECRET is shorter than 32 characters")
+        if str(self.DATABASE_URL) == DEV_DATABASE_URL:
+            problems.append("DATABASE_URL is the development default")
+        if not self.COOKIE_SECURE:
+            problems.append("COOKIE_SECURE must be true in production (HTTPS only)")
+        if self.DEBUG:
+            problems.append("DEBUG must be false in production")
+        if "*" in self.CORS_ORIGINS:
+            problems.append("CORS_ORIGINS must not be '*' when credentials are allowed")
+        if any(o.startswith("http://") for o in self.CORS_ORIGINS):
+            problems.append("CORS_ORIGINS must use https in production")
+
+        if problems:
+            raise InsecureConfigurationError(
+                "Refusing to start with ENV=prod:\n  - "
+                + "\n  - ".join(problems)
+                + "\n\nSet these in the environment. Generate a secret with:\n"
+                '  python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        return self
+
+    @staticmethod
+    def generate_secret() -> str:
+        """Convenience for operators provisioning a deployment."""
+        return secrets.token_urlsafe(48)
 
     @property
     def sync_database_url(self) -> str:
