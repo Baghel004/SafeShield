@@ -7,7 +7,6 @@ Set TEST_DATABASE_URL to override.
 
 import asyncio
 import os
-import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -23,16 +22,20 @@ from app.main import app
 from app.models import Base
 
 
-def pytest_asyncio_loop_factories(config: object, item: object) -> dict[str, object] | None:
-    """psycopg3 cannot run on Windows' default ProactorEventLoop -- see app.compat.
+def pytest_asyncio_loop_factories(config: object, item: object) -> dict[str, object]:
+    """Run tests on a selector-based event loop.
 
-    Uses pytest-asyncio's loop-factory hook rather than overriding the
-    `event_loop_policy` fixture, which is deprecated, and avoids the
-    likewise-deprecated asyncio policy API.
+    psycopg3 cannot use Windows' default ProactorEventLoop; SelectorEventLoop is
+    already the default on Linux and macOS, so this is unconditional. It has to
+    be: pytest-asyncio invokes the hook whenever it is implemented and requires a
+    non-empty mapping back, so returning None on non-Windows platforms raised
+    UsageError and aborted collection for every test -- a failure that could not
+    reproduce on the Windows machine this was written on.
+
+    Uses this hook rather than overriding the `event_loop_policy` fixture, which
+    is deprecated, and avoids the likewise-deprecated asyncio policy API.
     """
-    if sys.platform == "win32":
-        return {"selector": asyncio.SelectorEventLoop}
-    return None
+    return {"selector": asyncio.SelectorEventLoop}
 
 
 TEST_DATABASE_URL = os.getenv(
