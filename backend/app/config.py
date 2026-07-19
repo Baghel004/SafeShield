@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     # --- Redis / background jobs ---
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # --- Observability ---
+    # Plain text is easier to read while developing; JSON is the only format a
+    # log aggregator can filter on, so production defaults the other way.
+    JSON_LOGS: bool = False
+    # Port the worker serves its metrics on. The worker has no HTTP server of
+    # its own, so without this its ingestion metrics are invisible.
+    WORKER_METRICS_PORT: int = 9100
+
     # --- OpenAI ---
     OPENAI_API_KEY: str | None = None
     EMBEDDING_MODEL: str = "text-embedding-3-small"

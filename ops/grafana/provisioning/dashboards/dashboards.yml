@@ -1,0 +1,15 @@
+apiVersion: 1
+
+providers:
+  - name: safeshield
+    orgId: 1
+    type: file
+    disableDeletion: true
+    # Edits made in the UI are overwritten on restart. That is intentional: the
+    # file on disk is the source of truth, so a dashboard change is reviewed in
+    # a pull request like any other.
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -25,7 +25,7 @@ real RAG pipeline.
 | 4 | Evaluation harness + quality regression gate in CI | ✅ Done |
 | 4.5 | Hardening: the gaps an audit of phases 1–4 turned up | ✅ Done |
 | 5 | React frontend | ✅ Done |
-| 6 | Compose + Prometheus/Grafana + deploy | ⬜ |
+| 6 | Compose + Prometheus/Grafana + deploy | ✅ Done |
 | 7 | Kubernetes manifests + Helm + Terraform | ⬜ |
 
 ---
@@ -52,8 +52,9 @@ live in `backend/app/rag/`, and its in-process index is a pgvector table.
 
 ```
 backend/     the FastAPI service — the only backend
-frontend/    React client -- auth, uploads, streamed answers with citations
+frontend/    React client — auth, uploads, streamed answers with citations
 datasets/    six public insurer policies used as the shared corpus
+ops/         Prometheus rules, Grafana dashboards, deployment runbook
 scripts/     database bootstrap
 ```
 
@@ -262,6 +263,45 @@ because by then the response has already begun — so a failure looks like a
 request that succeeded and stopped early, and watching for that event is the
 only way to tell.
 
+### Monitoring — two dashboards, because they answer different questions
+
+`docker compose up` brings up Prometheus, Grafana with dashboards provisioned
+from `ops/grafana/dashboards/`, and exporters for Postgres and Redis. Nothing to
+click.
+
+**Service health** is the usual thing: rate, errors, duration, saturation. It
+answers "is it up and fast".
+
+**RAG quality and cost** answers "is it any *good*", which the first cannot see
+at all. A pipeline that retrieves nothing, refuses every question and returns
+200 in 40ms looks perfect on a service dashboard. So there are metrics for
+refusal rate, time to first token, median chunks retrieved, the fused RRF score
+of the best match, and token spend split by prompt, completion and embedding.
+
+The panel that justifies the whole exercise is **which retriever found the
+results**. When `plainto_tsquery` was ANDing every term, the lexical half was
+dead for natural-language questions — and latency, error rate and throughput
+were all perfect throughout. Nothing but a metric like that would have shown it.
+There is an alert on the same condition:
+
+```promql
+sum(rate(safeshield_retrieval_contributors_total{source=~"sparse|both"}[15m])) == 0
+  and sum(rate(safeshield_retrieval_contributors_total[15m])) > 0
+```
+
+Token spend is the other one worth having. This project runs on a budget under
+$10/month, and a scripted loop can spend that in an afternoon; without a metric
+the first sign is the invoice.
+
+Every log line is JSON carrying a `request_id`, and the same id comes back in
+`X-Request-ID` — a user reporting "it failed" hands you the key to find it.
+`/api/health` stays shallow liveness while `/api/ready` actually checks Postgres
+and Redis, because wiring a database check into liveness means a brief blip
+restarts every replica at once.
+
+Operational procedures — deploying, and what to check when answers go wrong,
+uploads stall or spend spikes — are in [`ops/RUNBOOK.md`](ops/RUNBOOK.md).
+
 ---
 
 ## Running locally
@@ -269,11 +309,31 @@ only way to tell.
 ### With Docker (recommended)
 
 ```bash
-cp backend/.env.example backend/.env   # then edit JWT_SECRET
+cp .env.example .env    # repo root — compose only reads a .env beside itself
 docker compose up
 ```
 
-API on <http://localhost:8000>, interactive docs at `/docs`.
+`backend/.env` is for running the API directly with `python run.py`; compose
+does not read it. Getting that wrong is quiet rather than loud — without a key
+the app falls back to deterministic fake embeddings, so the corpus indexes
+cleanly, every document reports `ready`, and retrieval returns noise.
+
+| Service | URL |
+|---|---|
+| API (docs at `/docs`) | <http://localhost:8000> |
+| Grafana (`admin`/`admin`) | <http://localhost:3001> |
+| Prometheus | <http://localhost:9090> |
+
+Then index the sample policies, or every question refuses:
+
+```bash
+docker compose exec api python scripts/seed_corpus.py
+```
+
+For production, `docker-compose.prod.yml` overlays the development defaults —
+it removes the source bind-mount, turns off `DEBUG` and `RELOAD`, switches to
+JSON logs, and unpublishes Postgres, Redis, Prometheus and Grafana. See
+[`ops/RUNBOOK.md`](ops/RUNBOOK.md).
 
 ### Without Docker
 
@@ -360,7 +420,7 @@ The refresh token is an httpOnly cookie and is never readable from JavaScript.
 | RAG | pdfplumber, OpenAI `text-embedding-3-small`, `gpt-4o-mini` |
 | Frontend | React, Vite, TypeScript, Tailwind, TanStack Query |
 | Quality | pytest, ruff, mypy (strict), GitHub Actions |
-| Ops | Docker, Prometheus, Grafana |
+| Ops | Docker Compose, Prometheus, Grafana, structured logging |
 
 ---
 

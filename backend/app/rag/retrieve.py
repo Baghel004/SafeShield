@@ -25,6 +25,7 @@ never anyone else's.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -32,6 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core import metrics
 from app.rag.embed import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
@@ -137,6 +139,11 @@ async def retrieve(
     limit = limit or settings.RETRIEVAL_TOP_K
     candidates = candidates or settings.RETRIEVAL_CANDIDATES
 
+    # Timed from here, so the embedding call is included. It is usually the
+    # slowest part, and excluding it would make retrieval look fast while the
+    # user waits.
+    started = time.perf_counter()
+
     vectors = await provider.embed([query])
     if not vectors:
         return []
@@ -171,6 +178,8 @@ async def retrieve(
         )
         for r in rows
     ]
+
+    metrics.observe_retrieval(list(results), time.perf_counter() - started)
 
     logger.debug(
         "retrieved %d chunks for %r (dense-only=%d, sparse-only=%d, both=%d)",

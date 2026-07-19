@@ -14,12 +14,14 @@ open at all, bracketed by two short transactions.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from pathlib import Path
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import metrics
 from app.models.chunk import Chunk
 from app.models.document import Document, DocumentStatus
 from app.rag.chunk import Chunk as TextChunk
@@ -46,6 +48,8 @@ async def ingest_document(
     error, so a stuck upload is always visible rather than sitting on `pending`
     forever.
     """
+    started = time.perf_counter()
+
     # --- Transaction 1: claim the document -------------------------------
     async with session_factory() as db:
         document = await db.scalar(select(Document).where(Document.id == document_id))
@@ -112,6 +116,10 @@ async def ingest_document(
         raise
 
     logger.info("Ingested %s: %d pages, %d chunks", filename, page_count, len(chunks))
+    metrics.ingestions.labels(outcome="succeeded").inc()
+    metrics.ingestion_duration.observe(time.perf_counter() - started)
+    metrics.ingestion_chunks.inc(len(chunks))
+
     return len(chunks)
 
 
@@ -125,7 +133,15 @@ async def _mark_failed(
     A fresh one because the session that failed may itself be the problem -- a
     dropped connection cannot be used to report that the connection dropped.
     """
-    logger.exception("Ingestion failed for document %s", document_id)
+    # Counted here rather than at each raise site: every failure path funnels
+    # through this function, so one call cannot drift out of step with another.
+    metrics.ingestions.labels(outcome="failed").inc()
+
+    logger.exception(
+        "Ingestion failed for document %s",
+        document_id,
+        extra={"ctx_document_id": str(document_id), "ctx_reason": type(exc).__name__},
+    )
     try:
         async with session_factory() as db:
             document = await db.scalar(select(Document).where(Document.id == document_id))

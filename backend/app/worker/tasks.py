@@ -14,9 +14,11 @@ from typing import Any
 
 from arq import cron
 from arq.connections import RedisSettings
-from sqlalchemy import select
+from arq.constants import default_queue_name
+from sqlalchemy import func, select
 
 from app.config import settings
+from app.core import metrics
 from app.core.files import storage_path
 from app.db import SessionLocal
 from app.models.document import Document, DocumentStatus
@@ -62,12 +64,27 @@ async def requeue_stranded_documents(ctx: dict[str, Any]) -> int:
                 )
             )
         ).all()
+        # Every pending document, not only the stale ones. Sustained non-zero
+        # is the signal that jobs are not being picked up at all -- visible on
+        # a dashboard well before anyone notices an upload never finished.
+        pending_total = await session.scalar(
+            select(func.count())
+            .select_from(Document)
+            .where(Document.status == DocumentStatus.PENDING)
+        )
+
+    metrics.documents_pending.set(pending_total or 0)
+
+    redis = ctx["redis"]
+    try:
+        metrics.queue_depth.set(await redis.llen(default_queue_name))
+    except Exception:  # noqa: BLE001 -- a metric must never break the sweep
+        logger.debug("could not read queue depth", exc_info=True)
 
     if not stranded:
         return 0
 
     # Reuse the worker's own pool rather than opening a connection per document.
-    redis = ctx["redis"]
     for doc_id in stranded:
         await redis.enqueue_job("ingest_document_task", str(doc_id))
 
@@ -90,11 +107,26 @@ def _redis_settings() -> RedisSettings:
     return rs
 
 
+async def _startup(_ctx: dict[str, Any]) -> None:
+    """Serve worker metrics.
+
+    The worker has no HTTP server, so its ingestion counters would be invisible
+    to Prometheus -- and ingestion is where the slow, expensive and most
+    failure-prone work happens. `start_http_server` runs a small server on its
+    own thread, which is enough for a scrape endpoint.
+    """
+    from prometheus_client import start_http_server
+
+    start_http_server(settings.WORKER_METRICS_PORT, registry=metrics.REGISTRY)
+    logger.info("worker metrics on :%d/metrics", settings.WORKER_METRICS_PORT)
+
+
 class WorkerSettings:
     """Worker configuration. Start it with `python worker.py`, not the arq CLI --
     see worker.py for why."""
 
     functions = [ingest_document_task]
+    on_startup = _startup
     # Runs on one worker at a time regardless of how many replicas are up, so
     # scaling out does not multiply the sweep.
     cron_jobs = [cron(requeue_stranded_documents, minute=set(range(0, 60, 5)), run_at_startup=True)]

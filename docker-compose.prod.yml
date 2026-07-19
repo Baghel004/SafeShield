@@ -1,0 +1,86 @@
+# Production overlay.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Applied on top of the base file, which is a *development* configuration: it
+# bind-mounts the source tree over the image, runs with DEBUG and RELOAD on,
+# and ships default passwords. Every one of those is wrong in production, and
+# each is silent -- the app starts and serves traffic either way.
+#
+# Nothing here contains a secret. Values come from the environment, and the
+# config validator refuses to start with a development default when ENV=prod.
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    # Not published. The database is reachable only on the compose network;
+    # exposing 5432 to the host is how a development default ends up on the
+    # public internet.
+    ports: !reset []
+    restart: unless-stopped
+
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+
+  api:
+    environment:
+      ENV: prod
+      DEBUG: "false"
+      RELOAD: "false"
+      JSON_LOGS: "true"
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET -- generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to the frontend origin, https only}
+      COOKIE_SECURE: "true"
+    # The bind mount is removed: production must run the code baked into the
+    # image, not whatever happens to be on the host. Left in, a deploy would
+    # "succeed" while serving the previous checkout.
+    volumes: !reset []
+    restart: unless-stopped
+    # Migrations run here rather than in an init container purely to keep this
+    # single-host setup simple. With more than one replica this becomes a race
+    # and belongs in a separate one-shot job -- see the runbook.
+    command: sh -c "alembic upgrade head && python run.py"
+
+  worker:
+    environment:
+      ENV: prod
+      DEBUG: "false"
+      JSON_LOGS: "true"
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS}
+      COOKIE_SECURE: "true"
+    volumes: !reset []
+    restart: unless-stopped
+
+  prometheus:
+    # Bound to loopback: metrics name internal routes and expose traffic
+    # patterns, and Prometheus has no authentication of its own. Reach it
+    # through an SSH tunnel or put it behind the ingress.
+    ports: !override
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+    ports: !override
+      - "127.0.0.1:3001:3000"
+    restart: unless-stopped
+
+  postgres-exporter:
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN:?set POSTGRES_EXPORTER_DSN}
+    restart: unless-stopped
+
+  redis-exporter:
+    restart: unless-stopped

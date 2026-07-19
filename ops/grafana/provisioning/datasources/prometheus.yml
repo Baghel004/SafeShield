@@ -1,0 +1,15 @@
+# Provisioned as code so a fresh `docker compose up` produces a working Grafana
+# with no clicking. A dashboard that only exists in someone's browser is not
+# part of the project.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

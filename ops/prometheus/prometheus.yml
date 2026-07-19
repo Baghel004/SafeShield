@@ -1,0 +1,46 @@
+# Scrape configuration.
+#
+# Four targets, because the interesting failures live in different processes:
+# the API serves requests, the worker does the slow expensive work, and
+# Postgres and Redis are the dependencies that take both down.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: local
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: safeshield-api
+
+  - job_name: worker
+    # The worker has no HTTP server of its own; prometheus_client runs a small
+    # one on this port purely so ingestion metrics can be scraped.
+    static_configs:
+      - targets: ["worker:9100"]
+        labels:
+          service: safeshield-worker
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: postgres
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: redis
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

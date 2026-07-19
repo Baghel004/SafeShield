@@ -22,6 +22,8 @@ dependencies = [
     "email-validator>=2.2",         # EmailStr validation
     # --- background jobs ---
     "arq>=0.26",
+    # --- observability ---
+    "prometheus-client>=0.21",
     # --- RAG pipeline ---
     "pdfplumber>=0.11",             # PDF text and table extraction
     "tiktoken>=0.8",                # token counting for chunk sizing

@@ -14,6 +14,7 @@ import math
 from typing import Protocol
 
 from app.config import settings
+from app.core import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +80,18 @@ class OpenAIEmbeddings:
         out: list[list[float]] = []
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]
-            response = await self._client.embeddings.create(
-                model=self._model, input=batch, dimensions=self._dimensions
-            )
+            try:
+                response = await self._client.embeddings.create(
+                    model=self._model, input=batch, dimensions=self._dimensions
+                )
+            except Exception:
+                metrics.openai_errors.labels(operation="embedding").inc()
+                raise
+
+            if response.usage:
+                metrics.openai_tokens.labels(model=self._model, kind="embedding").inc(
+                    response.usage.total_tokens
+                )
             # The API documents order preservation, but the cost of being wrong
             # here is silently mismatching vectors to chunks -- so sort by index.
             ordered = sorted(response.data, key=lambda d: d.index)

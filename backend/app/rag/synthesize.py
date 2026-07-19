@@ -15,12 +15,14 @@ enforce that:
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from app.config import settings
+from app.core import metrics
 from app.rag.retrieve import RetrievedChunk
 
 if TYPE_CHECKING:
@@ -127,29 +129,65 @@ async def stream_answer(question: str, chunks: list[RetrievedChunk]) -> AsyncIte
     Streaming is not a nicety here: a grounded answer over six excerpts takes
     several seconds, and a user watching a spinner assumes the app is broken.
     """
+    started = time.perf_counter()
+
     if not has_usable_context(chunks):
+        # A refusal is a correct outcome, not an error -- but a rising refusal
+        # rate is the earliest visible sign that retrieval has degraded, which
+        # is why it is counted rather than passed over silently.
+        metrics.answers.labels(outcome="refused").inc()
+        metrics.answer_duration.observe(time.perf_counter() - started)
         yield NO_CONTEXT_ANSWER
         return
 
     if not settings.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not set; cannot generate answers")
 
-    stream = await _client().chat.completions.create(
-        model=settings.CHAT_MODEL,
-        max_tokens=settings.ANSWER_MAX_TOKENS,
-        # Low but non-zero: this is extraction, not composition. Wording should
-        # track the source document, not the model's preferences.
-        temperature=0.1,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_prompt(question, chunks)},
-        ],
-        stream=True,
-    )
+    try:
+        stream = await _client().chat.completions.create(
+            model=settings.CHAT_MODEL,
+            max_tokens=settings.ANSWER_MAX_TOKENS,
+            # Low but non-zero: this is extraction, not composition. Wording should
+            # track the source document, not the model's preferences.
+            temperature=0.1,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": build_user_prompt(question, chunks)},
+            ],
+            stream=True,
+            # Usage is not reported on a streamed response unless asked for,
+            # so without this the token counters stay at zero and cost is
+            # invisible for exactly the requests that generate most of it.
+            stream_options={"include_usage": True},
+        )
+    except Exception:
+        metrics.openai_errors.labels(operation="chat").inc()
+        metrics.answers.labels(outcome="error").inc()
+        raise
+
+    first_token = True
 
     async for event in stream:
+        # The usage-bearing frame arrives last and carries no choices.
+        if event.usage:
+            metrics.openai_tokens.labels(model=settings.CHAT_MODEL, kind="prompt").inc(
+                event.usage.prompt_tokens
+            )
+            metrics.openai_tokens.labels(model=settings.CHAT_MODEL, kind="completion").inc(
+                event.usage.completion_tokens
+            )
+
         if not event.choices:
             continue
         delta = event.choices[0].delta
         if delta and delta.content:
+            if first_token:
+                # What the user actually waits for. Total duration hides this:
+                # a slow first token and a slow stream look identical there,
+                # and only one of them feels broken.
+                metrics.answer_ttft.observe(time.perf_counter() - started)
+                first_token = False
             yield delta.content
+
+    metrics.answers.labels(outcome="grounded").inc()
+    metrics.answer_duration.observe(time.perf_counter() - started)

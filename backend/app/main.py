@@ -11,15 +11,13 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api import auth, chat, documents
+from app.api import auth, chat, documents, ops
 from app.config import settings
+from app.core.observability import ObservabilityMiddleware, configure_logging
 from app.core.ratelimit import limiter
 from app.db import engine
 
-logging.basicConfig(
-    level=logging.DEBUG if settings.DEBUG else logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-)
+configure_logging(debug=settings.DEBUG, json_logs=settings.JSON_LOGS)
 logger = logging.getLogger("safeshield")
 
 
@@ -62,11 +60,13 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+# Registered last so it runs outermost: Starlette applies middleware in reverse
+# order of registration. That matters -- a request rejected by the rate limiter
+# or CORS would otherwise never be counted, and those are exactly the requests
+# worth seeing on a dashboard.
+app.add_middleware(ObservabilityMiddleware)
+
+app.include_router(ops.router)
 app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
-
-
-@app.get("/api/health", tags=["ops"])
-async def health() -> dict[str, str]:
-    return {"status": "ok", "version": app.version}
