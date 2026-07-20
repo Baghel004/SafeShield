@@ -1,0 +1,14 @@
+# Shell scripts must check out with Unix (LF) line endings even on Windows.
+# Git Bash cannot run a script saved with Windows (CRLF) endings -- it fails
+# with a confusing "\r: command not found" or "bad interpreter" error. Forcing
+# eol=lf here means a fresh clone on any OS gets runnable scripts.
+*.sh text eol=lf
+
+# Binary files git must never try to normalize.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.avif binary
+*.ico binary
