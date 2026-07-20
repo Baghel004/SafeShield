@@ -27,7 +27,15 @@ spec:
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
-      serviceAccountName: {{ include "safeshield.serviceAccountName" . }}
+      # The default service account, deliberately, not the application's.
+      # Two reasons, and the first is load-bearing: this Job is a pre-install
+      # hook, and the application ServiceAccount is a normal chart resource that
+      # Helm does not create until *after* hooks run -- so referencing it here
+      # makes the hook pod unschedulable ("serviceaccount not found") and the
+      # whole install times out. The second is least privilege: a migration
+      # only needs the database, so it has no business assuming the S3 role.
+      serviceAccountName: default
+      automountServiceAccountToken: false
       securityContext:
         {{- include "safeshield.securityContext" . | nindent 8 }}
       {{- with .Values.imagePullSecrets }}

@@ -73,8 +73,12 @@ kubectl -n "$NAMESPACE" create secret generic safeshield-secrets \
 
 # --- 5. Release --------------------------------------------------------------
 step "Installing the chart (migrations run as a pre-install hook first)"
+# fullnameOverride keeps resource names as safeshield-api / safeshield-worker
+# rather than the default safeshield-safeshield-* (release name + chart name).
+# Every reference below and in down.sh assumes the short form.
 helm upgrade --install safeshield "$CHART" \
   --namespace "$NAMESPACE" \
+  --set fullnameOverride=safeshield \
   --set image.repository="$ECR_URL" \
   --set image.tag="$IMAGE_TAG" \
   --set config.storage.bucket="$UPLOADS_BUCKET" \
@@ -85,7 +89,21 @@ helm upgrade --install safeshield "$CHART" \
 
 # --- 6. Data -----------------------------------------------------------------
 step "Seeding the sample corpus (destroy wipes the database, so this runs every time)"
-kubectl -n "$NAMESPACE" exec deploy/safeshield-api -- python scripts/seed_corpus.py
+# Seeded in the worker, not the API. Extraction holds a whole PDF in memory and
+# OOM-kills the 512Mi API pod; and six PDFs back to back in one process peak
+# past even the worker's 1Gi (a single user upload stays under it, the bulk
+# seed does not), so the ceiling is raised for this one-off. It is a limit, not
+# a request, so the headroom costs nothing when unused, and the next `up.sh`
+# resets it via helm.
+kubectl -n "$NAMESPACE" set resources deploy/safeshield-worker --limits=memory=2Gi
+kubectl -n "$NAMESPACE" rollout status deploy/safeshield-worker --timeout=3m
+WORKER_POD="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/component=worker \
+  -o jsonpath='{.items[0].metadata.name}')"
+# The sample PDFs live outside the Docker build context, so they are not in the
+# image. Copy them into a writable path -- the root filesystem is read-only --
+# and point the seed at it.
+kubectl -n "$NAMESPACE" cp datasets "$WORKER_POD:/tmp/datasets"
+kubectl -n "$NAMESPACE" exec "$WORKER_POD" -- python scripts/seed_corpus.py --datasets /tmp/datasets
 
 # --- 7. Frontend build, pointed at this backend ------------------------------
 step "Building and publishing the frontend"

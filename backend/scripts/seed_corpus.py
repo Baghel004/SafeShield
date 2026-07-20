@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -25,20 +26,19 @@ from app.models.document import Document, DocumentStatus  # noqa: E402
 from app.rag.embed import get_embedding_provider  # noqa: E402
 from app.rag.ingest import ingest_document  # noqa: E402
 
-DATASETS = Path(__file__).resolve().parents[2] / "datasets"
+# Repo layout for local runs. The datasets live outside the backend directory,
+# so they are not in the Docker build context and cannot be in the image -- in
+# a container the PDFs have to come from somewhere writable that the deploy put
+# them, hence SEED_DATASETS_DIR and the --datasets flag.
+DEFAULT_DATASETS = Path(__file__).resolve().parents[2] / "datasets"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 logger = logging.getLogger("seed")
 
 
-async def seed(force: bool) -> int:
+async def seed(force: bool, pdfs: list[Path]) -> int:
     # Imported here so the event loop policy is set before the engine is built.
     from app.db import SessionLocal, engine
-
-    pdfs = sorted(DATASETS.glob("*.pdf"))
-    if not pdfs:
-        logger.error("No PDFs found in %s", DATASETS)
-        return 1
 
     provider = get_embedding_provider()
     logger.info("Provider: %s (%d dims)", type(provider).__name__, provider.dimensions)
@@ -88,9 +88,22 @@ async def seed(force: bool) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--force", action="store_true", help="re-ingest already-ready documents")
+    parser.add_argument(
+        "--datasets",
+        type=Path,
+        default=Path(os.environ.get("SEED_DATASETS_DIR", DEFAULT_DATASETS)),
+        help="Directory of PDFs to ingest. Defaults to SEED_DATASETS_DIR or the repo's datasets/.",
+    )
     args = parser.parse_args()
 
-    return asyncio_run(seed(args.force))
+    # Resolve the corpus before touching the event loop, so the "nothing here"
+    # case fails fast and stays out of the async path.
+    pdfs = sorted(args.datasets.glob("*.pdf"))
+    if not pdfs:
+        logger.error("No PDFs found in %s", args.datasets)
+        return 1
+
+    return asyncio_run(seed(args.force, pdfs))
 
 
 if __name__ == "__main__":
