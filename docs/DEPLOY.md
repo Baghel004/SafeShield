@@ -26,24 +26,38 @@ it to say everything is gone. Forgetting is how you get a surprise bill.
   cluster), and ~15 minutes to tear down.
 - The OpenAI API key you already use for this project.
 
-**Where you type commands — use WSL2 (Ubuntu on Windows), not PowerShell.**
-Many Windows machines run an **Application Control** policy (Smart App Control
-or a managed WDAC policy) that blocks freshly-installed command-line tools such
-as `helm` and `terraform` — they fail with *"An Application Control policy has
-blocked this file"*. That policy does not apply to Linux programs running inside
-WSL2, and the deploy scripts are bash scripts that belong in Linux anyway. So
-the reliable path — and the one this guide assumes from here on — is to run the
-whole deploy from WSL2.
+### ⚠️ Which terminal — read this, it is the thing people get wrong
 
-Docker Desktop already uses WSL2 under the hood, so this adds no new heavy
-software; you are just working in the Linux side of a machine you already have.
+**Type every command in this guide inside the Ubuntu (WSL2) terminal.** Not Git
+Bash, not PowerShell, not CMD. The *only* exceptions are the two or three
+commands in Step 1a that are explicitly labelled "in PowerShell", and Docker
+Desktop's settings screen. Everywhere else, if a command block does not say
+PowerShell, it runs in **Ubuntu**.
 
-> If you are certain Application Control is *not* enabled on your machine, you
-> can instead install the tools on Windows with `winget install Amazon.AWSCLI
-> Hashicorp.Terraform Helm.Helm jqlang.jq` and run everything from **Git Bash**.
-> But if `helm version` returns the Application Control error, stop and use WSL2
-> as below — mixing the two does not work, because logging in to the cluster
-> makes `helm` and `kubectl` call `aws`, so all the tools must live together.
+**Why Ubuntu and not Git Bash or PowerShell:** Windows blocks the deploy tools
+(`helm`, `terraform`) with an **Application Control** policy — they fail with
+*"An Application Control policy has blocked this file"*. WSL2 (Ubuntu) is Linux,
+that policy does not reach into it, and the deploy scripts are bash scripts that
+belong in Linux anyway. Running them in Git Bash or PowerShell gives errors like
+`missing required tool: aws`, because the Windows copies of those tools are
+blocked or were uninstalled. Docker Desktop already runs on WSL2 under the hood,
+so Ubuntu adds no new heavy software.
+
+**How to tell which terminal you are in:**
+
+| You see a prompt like… | You are in… | Use it for the deploy? |
+|---|---|---|
+| `baghe@DESKTOP:...$` in a window titled *Ubuntu* | **Ubuntu (WSL2)** | ✅ yes, everything |
+| `PS C:\Users\...>` | PowerShell | only Step 1a |
+| `...MINGW64 ~$` or a `C:/...` path | Git Bash | ❌ no — close it |
+
+If you are not in Ubuntu, open it: click **Start**, type **Ubuntu**, press
+Enter.
+
+**If you earlier installed these tools on Windows** (with `winget`) and they got
+blocked, you can ignore them — they are not used from here on. Uninstalling them
+is optional: `winget uninstall Amazon.AWSCLI Hashicorp.Terraform Helm.Helm
+jqlang.jq` in PowerShell.
 
 ---
 
@@ -208,12 +222,16 @@ Save the file. (It is gitignored, so your email never gets committed.)
 
 ## Step 4 — Bring it live
 
-Make sure **Docker Desktop is running**, then in Git Bash from the project
-folder:
+Make sure **Docker Desktop is running** (whale icon in the Windows tray). Then,
+**in the Ubuntu terminal**, from the project folder:
 
 ```bash
-deploy/scripts/up.sh
+cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
+bash deploy/scripts/up.sh
 ```
+
+Note the exact path: `deploy/scripts/up.sh` — **`scripts`** with an "s". Running
+it with `bash` in front avoids any file-permission surprises.
 
 ### What happens, and the one interruption to expect
 
@@ -235,10 +253,10 @@ This is expected and safe. It is telling you to store your secret keys in AWS
 1. Copy the command it printed.
 2. Replace `sk-...` with your real OpenAI API key. (The `JWT_SECRET` part
    generates itself — leave that as printed.)
-3. Paste and run it in Git Bash. It prints the secret's ARN — that means it
+3. Paste and run it **in Ubuntu**. It prints the secret's ARN — that means it
    worked.
-4. Run `deploy/scripts/up.sh` **again**. It skips the 20 minutes already done
-   and continues from where it stopped. This interruption only ever happens
+4. Run `bash deploy/scripts/up.sh` **again**. It skips the 20 minutes already
+   done and continues from where it stopped. This interruption only ever happens
    once; the keys persist.
 
 ### When it finishes
@@ -274,10 +292,11 @@ show the "backend offline" banner when the backend is down, which is fine).
 
 ## Step 6 — Tear it down (do not skip this)
 
-When you are done for the session:
+When you are done for the session, **in Ubuntu**:
 
 ```bash
-deploy/scripts/down.sh
+cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
+bash deploy/scripts/down.sh
 ```
 
 It removes the release, destroys the infrastructure, and then **checks AWS
@@ -307,6 +326,11 @@ terraform -chdir=deploy/terraform-frontend destroy
 
 ## If something goes wrong
 
+- **`missing required tool: aws` (or terraform, helm, jq):** you are almost
+  certainly running the script in **Git Bash or PowerShell**, where the Windows
+  tools are blocked or gone. Close it, open **Ubuntu**, `cd` to the project
+  under `/mnt/c/...`, and run `bash deploy/scripts/up.sh` there. If you get this
+  *inside Ubuntu*, that tool is not installed yet — re-do Step 1c.
 - **"An Application Control policy has blocked this file" (helm/terraform on
   Windows):** this is the reason the guide uses WSL2. Do not fight it on
   Windows — run the deploy from Ubuntu (Step 1).
@@ -331,6 +355,8 @@ terraform -chdir=deploy/terraform-frontend destroy
 
 ## The whole thing, condensed
 
+Every line below runs in the **Ubuntu** terminal (not Git Bash, not PowerShell):
+
 ```bash
 # one-time setup, all inside Ubuntu (WSL2)
 #   install aws, terraform, helm, kubectl, jq  (see Step 1c)
@@ -339,8 +365,9 @@ cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
 cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
 #   ...edit that file: billing_alarm_email
 
-# every session (from Ubuntu, Docker Desktop running)
-deploy/scripts/up.sh      # first time: stops once to set the secret, then re-run
+# every session (Docker Desktop running)
+cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
+bash deploy/scripts/up.sh    # first time: stops once to set the secret, then re-run
 #   ...use the printed Frontend URL...
-deploy/scripts/down.sh    # ALWAYS, when finished
+bash deploy/scripts/down.sh  # ALWAYS, when finished
 ```
