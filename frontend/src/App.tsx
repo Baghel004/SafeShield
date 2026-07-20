@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, BrowserRouter as Router, Routes } from 'react-
 
 import { AuthProvider } from './auth/AuthContext'
 import { useAuth } from './auth/useAuth'
+import { BackendStatus } from './components/BackendStatus'
 import { Layout } from './components/Layout'
 import { Chat } from './routes/Chat'
 import { Documents } from './routes/Documents'
@@ -41,6 +42,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <AuthProvider>
+          <BackendStatus />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route element={<RequireAuth />}>

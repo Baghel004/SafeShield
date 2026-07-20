@@ -115,6 +115,52 @@ two API replicas — a configuration that would expose them immediately.
 
 ---
 
+## On-demand deploy (the intended workflow)
+
+The backend is not meant to run 24/7. It is brought up for a session and torn
+down after, which turns a ~$210/month stack into ~$0.28/hour. Two scripts wrap
+the whole thing:
+
+```bash
+cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
+# edit it: set billing_alarm_email, confirm deletion_protection = false
+
+deploy/scripts/up.sh      # ~25 min cold: infra, image, release, seed, frontend
+# ... demo ...
+deploy/scripts/down.sh    # uninstall, destroy, and verify nothing survived
+```
+
+`up.sh` provisions the infrastructure, builds and pushes the image tagged by
+commit sha, installs the chart (migrations run first as a hook), re-seeds the
+corpus — the database is wiped by every teardown, so this is not optional — and
+publishes the frontend pointed at the new backend. It prints the URL at the end.
+
+`down.sh` is the one that matters for the bill. It **uninstalls the Helm release
+before destroying the cluster**, because the ALB was created by the Ingress
+controller and Terraform does not know about it — destroy the cluster first and
+the load balancer is orphaned, billing with no owner. Then it destroys the
+infrastructure and, crucially, **does not trust that destroy succeeded**: it
+asks AWS whether any EKS cluster, NAT gateway, load balancer, RDS instance,
+ElastiCache group or tagged EC2 instance is still running, and exits non-zero if
+so. A surprise bill on an on-demand stack almost never comes from forgetting to
+tear down — it comes from a teardown that half-failed and left a NAT gateway up
+for a week.
+
+**What survives a teardown, by design:** the frontend (CDN, permanent, ~$1–3/mo),
+the ECR images, the uploads bucket, and the two Secrets Manager entries — all
+near-free. The database and its 838 indexed chunks do not survive, which is why
+`up.sh` re-seeds every time (~$0.02 of embeddings).
+
+The `deletion_protection = false` in `ondemand.tfvars` is what lets `destroy`
+remove the database at all. With the default `true` — correct for a permanent
+deployment — RDS refuses to drop and you are left paying for a database you
+believed you had removed.
+
+The manual steps below are the same operations the scripts automate, kept for
+reference and for a permanent (non-on-demand) deployment.
+
+---
+
 ## Deploying to Kubernetes (AWS)
 
 `deploy/terraform` provisions the infrastructure; `deploy/helm/safeshield`
@@ -122,10 +168,11 @@ deploys the application onto it.
 
 **What has been verified here, and what has not.** The chart lints, renders 14
 resources, and every one validates against the Kubernetes 1.30 schema including
-the ServiceMonitor CRDs. The Terraform is formatted, initialises against the
-real AWS provider and modules, and validates. None of it has been applied to a
-live cluster or a real AWS account — that needs credentials and costs money, so
-the first apply is yours. Treat the steps below as reviewed, not rehearsed.
+the ServiceMonitor CRDs. Both Terraform root modules are formatted, initialise
+against the real AWS provider and modules, and validate. The deploy scripts pass
+shellcheck. None of it has been applied to a live cluster or a real AWS account —
+that needs credentials and costs money, so the first apply is yours. Treat the
+steps below as reviewed, not rehearsed.
 
 ### 1. Infrastructure
 
@@ -140,10 +187,12 @@ Creates a VPC across two AZs, an EKS cluster, RDS Postgres 16 (pgvector is
 available from 15.2; the migration issues `CREATE EXTENSION vector`),
 ElastiCache Redis, an S3 bucket for uploads, ECR, and two IRSA roles.
 
-Rough cost at these defaults: **$130–160/month**, dominated by the EKS control
-plane (~$73) and the NAT gateway (~$32). `single_nat_gateway = true` is already
-set to halve the second. This is not a cheap way to run a demo — it is a way to
-demonstrate the deployment shape.
+Run continuously this costs roughly **$210/month** — EKS control plane (~$73),
+two t3.medium nodes (~$60), NAT gateway (~$32), RDS + ElastiCache (~$45), ALB
+(~$18). That is why the intended workflow is **on-demand**: bring it up for a
+session, tear it down after. Hourly that is about **$0.28**, so a four-hour demo
+is ~$1.20. The tooling for that is in the next section — prefer it over the raw
+commands here, which leave the stack running.
 
 ### 2. Secrets
 
@@ -222,6 +271,44 @@ kubectl -n safeshield exec deploy/safeshield-api -- python scripts/seed_corpus.p
 - **The Ingress needs the AWS Load Balancer Controller** installed in the
   cluster; the annotations assume it. Without it the Ingress is created and
   never gets an address, with no obvious error.
+
+### The frontend
+
+Hosted separately from the backend, in `deploy/terraform-frontend`, because the
+two have opposite lifecycles — the site stays up permanently while the backend
+comes and goes. Coupling them in one state file would tie a permanent CDN to an
+on-demand teardown.
+
+```bash
+terraform -chdir=deploy/terraform-frontend init
+terraform -chdir=deploy/terraform-frontend apply
+```
+
+Creates a private S3 bucket and a CloudFront distribution reaching it through
+Origin Access Control — nothing is served from S3 directly, so the CDN's caching
+and TLS are never bypassed. With no `domain_name` set it uses the free
+`*.cloudfront.net` domain, which needs no DNS and no certificate.
+
+The build must be pointed at the backend at build time, because the API URL is
+compiled into the bundle:
+
+```bash
+cd frontend
+VITE_API_BASE_URL="https://<alb-hostname>" npm run build
+aws s3 sync dist "s3://$(terraform -chdir=../deploy/terraform-frontend output -raw bucket_name)" --delete
+aws cloudfront create-invalidation \
+  --distribution-id $(terraform -chdir=../deploy/terraform-frontend output -raw distribution_id) \
+  --paths '/index.html'
+```
+
+Only `/index.html` is invalidated: Vite fingerprints the asset filenames, so a
+changed asset already has a new URL. That backend origin must also be in the
+API's `CORS_ORIGINS`, or the browser blocks every request before it is sent —
+`up.sh` passes it through as `config.corsOrigins[0]` automatically.
+
+Because the site outlives the backend, it checks `/api/health` on load and shows
+a "backend is currently offline" banner when the cluster is down, rather than a
+login form that fails for reasons the visitor cannot see.
 
 ### Rolling back
 

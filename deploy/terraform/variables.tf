@@ -75,7 +75,24 @@ variable "single_nat_gateway" {
 }
 
 variable "deletion_protection" {
-  description = "Blocks `terraform destroy` from dropping the database. Turn off deliberately, not by default."
+  description = <<-EOT
+    Blocks `terraform destroy` from dropping the database, and forces a final
+    snapshot. Correct for a permanent deployment; wrong for an on-demand one,
+    where it leaves RDS running after a destroy you thought completed. Set false
+    via ondemand.tfvars for the tear-down-after-each-session workflow.
+  EOT
   type        = bool
   default     = true
+}
+
+variable "billing_alarm_email" {
+  description = "Where to send the estimated-charges alarm. Empty disables the alarm and its SNS topic entirely."
+  type        = string
+  default     = ""
+}
+
+variable "billing_alarm_threshold_usd" {
+  description = "Dollar figure that trips the billing alarm. For an on-demand stack this should sit above one session's cost and below a month of it left running by accident."
+  type        = number
+  default     = 20
 }

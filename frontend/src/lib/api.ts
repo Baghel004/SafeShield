@@ -137,6 +137,30 @@ async function errorMessage(resp: Response): Promise<string> {
   return `Request failed (${resp.status})`
 }
 
+/**
+ * Is the backend reachable at all?
+ *
+ * The frontend is hosted permanently on a CDN; the backend is brought up on
+ * demand and torn down after. So "the API is simply not there right now" is a
+ * normal state, not an error, and it has to be distinguished from a real
+ * failure: a down backend makes `fetch` reject with a TypeError before any HTTP
+ * status exists, which would otherwise surface to the user as a confusing
+ * "something went wrong" on the login form.
+ */
+export async function isBackendUp(): Promise<boolean> {
+  try {
+    const resp = await fetch(`${BASE_URL}/api/health`, {
+      method: 'GET',
+      // A quick check, not a request worth waiting on. If the backend is down
+      // the connection refuses fast; this cap is for the slow-DNS case.
+      signal: AbortSignal.timeout(5000),
+    })
+    return resp.ok
+  } catch {
+    return false
+  }
+}
+
 // --- auth ------------------------------------------------------------------
 
 export const auth = {

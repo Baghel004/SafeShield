@@ -291,11 +291,24 @@ jobs:
           terraform_version: 1.10.3
 
       - name: Terraform is formatted and valid
-        working-directory: deploy/terraform
         run: |
-          terraform fmt -check -recursive
-          terraform init -backend=false
-          terraform validate
+          # Both root modules: the backend (EKS) and the frontend (S3 +
+          # CloudFront). fmt is checked once across the tree; validate runs per
+          # module because each has its own providers.
+          terraform fmt -check -recursive deploy/
+          for dir in deploy/terraform deploy/terraform-frontend; do
+            echo "== $dir =="
+            terraform -chdir="$dir" init -backend=false
+            terraform -chdir="$dir" validate
+          done
+
+      - name: Deploy scripts pass shellcheck
+        run: |
+          # A bug in down.sh is the expensive kind: it fails to tear something
+          # down and the stack keeps billing. shellcheck catches the obvious
+          # ones before they run against a live account.
+          docker run --rm -v "$PWD:/work" -w /work koalaman/shellcheck:stable \
+            deploy/scripts/up.sh deploy/scripts/down.sh
 
   security:
     name: Security scan

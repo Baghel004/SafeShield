@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, request, setAccessToken, setSessionLostHandler } from './api'
+import { ApiError, isBackendUp, request, setAccessToken, setSessionLostHandler } from './api'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -139,5 +139,27 @@ describe('request', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
 
     await expect(request('/api/documents/x', { method: 'DELETE' })).resolves.toBeUndefined()
+  })
+})
+
+describe('isBackendUp', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('is true when health responds ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })))
+    await expect(isBackendUp()).resolves.toBe(true)
+  })
+
+  it('is false when the backend is unreachable', async () => {
+    // The on-demand case: the cluster is torn down, so fetch rejects with a
+    // TypeError before any HTTP status exists. This must read as "down", not
+    // throw, or the whole app crashes when the backend is simply absent.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    await expect(isBackendUp()).resolves.toBe(false)
+  })
+
+  it('is false on a 5xx', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    await expect(isBackendUp()).resolves.toBe(false)
   })
 })

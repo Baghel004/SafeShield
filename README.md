@@ -336,13 +336,25 @@ pods would have two workers competing over the same queue while one is being
 torn down. And IRSA replaces static AWS keys, so there is no long-lived
 credential in a Secret to rotate or leak.
 
+The frontend is hosted separately — a private S3 bucket behind CloudFront in
+`deploy/terraform-frontend`, kept apart from the backend because the two have
+opposite lifecycles. The site stays up permanently; the backend is brought up
+per session and torn down after.
+
+**On-demand, because always-on is ~$210/month.** `deploy/scripts/up.sh` and
+`down.sh` wrap the whole cycle — up provisions, builds and pushes the image,
+installs the chart, re-seeds the corpus and publishes the frontend; down
+uninstalls, destroys, and then **verifies against the AWS API that nothing was
+left running**, because a half-failed teardown leaving a NAT gateway up is how
+an on-demand stack actually produces a surprise bill. Hourly this is about
+$0.28, so a demo session is around a dollar.
+
 **What is verified, and what is not.** The chart lints, renders 14 resources,
 and all 14 validate against the Kubernetes 1.30 schema including the
-ServiceMonitor CRDs. The Terraform is formatted, initialises against the real
-AWS provider and modules, and validates. CI runs all of that. None of it has
-been applied to a live cluster or a real AWS account — that needs credentials
-and costs roughly $130–160/month, so the first apply is a deliberate act, not
-something to leave running.
+ServiceMonitor CRDs. Both Terraform modules are formatted, initialise against
+the real AWS provider and modules, and validate; the deploy scripts pass
+shellcheck. CI runs the chart and Terraform checks. None of it has been applied
+to a live cluster or a real AWS account — the first apply is a deliberate act.
 
 ---
 
