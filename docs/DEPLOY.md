@@ -192,20 +192,38 @@ see an error, the keys are wrong — re-run `aws configure`.
 
 ---
 
-## Step 3 — Create your config file
+## Step 3 — Get the project onto the Linux side, and create your config
 
-The deploy reads one settings file. In **Ubuntu**, go to the project (your
-Windows files appear under `/mnt/c`) and copy the example:
+**Do not run the deploy from `/mnt/c` (your Windows Desktop / OneDrive folder).**
+`git` and `terraform` write many small files with Unix permissions, and the
+Windows drive — especially inside OneDrive — rejects those operations with
+errors like *"could not write config file … Permission denied"*. It is also
+much slower. The fix is to keep the project in your **WSL home directory**, the
+Linux filesystem, exactly as the official WSL docs recommend.
+
+Get a clean copy there by cloning it from GitHub. In **Ubuntu**:
 
 ```bash
-cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
-cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
+cd ~
+git clone https://github.com/Baghel004/SafeShield.git
+cd SafeShield
+git checkout phase-1-fastapi-auth
 ```
 
-Open `deploy/terraform/ondemand.tfvars` in a text editor and set two things.
-The file is under your Windows Desktop, so you can edit it in Notepad or VS Code
-on the Windows side — or from Ubuntu with `nano deploy/terraform/ondemand.tfvars`
-(save with Ctrl+O, Enter, then Ctrl+X):
+> This is a separate copy from the one on your Desktop — that is fine, and
+> intended. You only deploy from this Linux copy. Make sure the branch you are
+> deploying is pushed to GitHub first (from wherever you normally commit), so
+> the clone has your latest code.
+
+Now create the one settings file the deploy reads. It is gitignored, so the
+clone does not include it — you make it here:
+
+```bash
+cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
+nano deploy/terraform/ondemand.tfvars
+```
+
+In the editor set two things (save with **Ctrl+O**, Enter, then **Ctrl+X**):
 
 ```hcl
 deletion_protection = false            # leave this false, or you cannot tear down
@@ -216,8 +234,6 @@ Leave everything else as-is. **If you chose a region other than `ap-south-1`**
 in Step 2d, also add a line `region = "your-region"` here, and set it in Ubuntu
 for this session: `export AWS_REGION=your-region`.
 
-Save the file. (It is gitignored, so your email never gets committed.)
-
 ---
 
 ## Step 4 — Bring it live
@@ -226,7 +242,7 @@ Make sure **Docker Desktop is running** (whale icon in the Windows tray). Then,
 **in the Ubuntu terminal**, from the project folder:
 
 ```bash
-cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
+cd ~/SafeShield
 bash deploy/scripts/up.sh
 ```
 
@@ -295,7 +311,7 @@ show the "backend offline" banner when the backend is down, which is fine).
 When you are done for the session, **in Ubuntu**:
 
 ```bash
-cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
+cd ~/SafeShield
 bash deploy/scripts/down.sh
 ```
 
@@ -328,9 +344,13 @@ terraform -chdir=deploy/terraform-frontend destroy
 
 - **`missing required tool: aws` (or terraform, helm, jq):** you are almost
   certainly running the script in **Git Bash or PowerShell**, where the Windows
-  tools are blocked or gone. Close it, open **Ubuntu**, `cd` to the project
-  under `/mnt/c/...`, and run `bash deploy/scripts/up.sh` there. If you get this
-  *inside Ubuntu*, that tool is not installed yet — re-do Step 1c.
+  tools are blocked or gone. Close it, open **Ubuntu**, `cd ~/SafeShield`, and
+  run `bash deploy/scripts/up.sh` there. If you get this *inside Ubuntu*, that
+  tool is not installed yet — re-do Step 1c.
+- **`could not write config file … Permission denied` during `terraform init`:**
+  you are running from `/mnt/c` (the Windows drive), which rejects the file
+  operations git needs. Clone the project into your Linux home instead and run
+  from there — see Step 3.
 - **"An Application Control policy has blocked this file" (helm/terraform on
   Windows):** this is the reason the guide uses WSL2. Do not fight it on
   Windows — run the deploy from Ubuntu (Step 1).
@@ -361,12 +381,12 @@ Every line below runs in the **Ubuntu** terminal (not Git Bash, not PowerShell):
 # one-time setup, all inside Ubuntu (WSL2)
 #   install aws, terraform, helm, kubectl, jq  (see Step 1c)
 aws configure                                                          # keys + ap-south-1 + json
-cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
+cd ~/SafeShield
 cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
 #   ...edit that file: billing_alarm_email
 
 # every session (Docker Desktop running)
-cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
+cd ~/SafeShield
 bash deploy/scripts/up.sh    # first time: stops once to set the secret, then re-run
 #   ...use the printed Frontend URL...
 bash deploy/scripts/down.sh  # ALWAYS, when finished

@@ -135,7 +135,10 @@ kubectl -n "$NAMESPACE" exec "$WORKER_POD" -- python scripts/seed_corpus.py --da
 step "Building and publishing the frontend"
 ALB_HOST="$(kubectl -n "$NAMESPACE" get ingress safeshield \
   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-( cd frontend && VITE_API_BASE_URL="https://${ALB_HOST}" npm run build )
+# npm ci first: on a fresh clone there is no node_modules, and any copied from
+# a Windows checkout would hold Windows-only binaries (esbuild) that do not run
+# in Linux. `ci` installs exactly the locked versions from scratch.
+( cd frontend && npm ci && VITE_API_BASE_URL="https://${ALB_HOST}" npm run build )
 aws s3 sync frontend/dist "s3://${FRONTEND_BUCKET}" --delete
 # Invalidate index.html so the CDN serves the new bundle immediately. The
 # fingerprinted assets get fresh URLs and do not need invalidating.
