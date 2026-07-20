@@ -1,8 +1,9 @@
 # Going live — a complete walkthrough
 
 This is the hand-holding version, written for someone who has not deployed to
-AWS before. It assumes Windows 11 (which is what this project was built on) and
-takes you from nothing to a live, public URL, then back down to zero cost.
+AWS before. It assumes Windows 11 with WSL2 (Ubuntu) — which is where the deploy
+runs, for reasons explained under "Where you type commands" below — and takes
+you from nothing to a live, public URL, then back down to zero cost.
 
 `ops/RUNBOOK.md` is the reference — the *why* behind each piece. This is the
 *how*, in order, with the exact commands.
@@ -25,50 +26,93 @@ it to say everything is gone. Forgetting is how you get a surprise bill.
   cluster), and ~15 minutes to tear down.
 - The OpenAI API key you already use for this project.
 
-**Where you type commands:** open **Git Bash** (not PowerShell or CMD). The
-deploy scripts are bash scripts. Right-click inside the `SafeShield` project
-folder in File Explorer and choose **"Git Bash Here"**, or open Git Bash and
-run `cd /c/Users/baghe/OneDrive/Desktop/SafeShield`.
+**Where you type commands — use WSL2 (Ubuntu on Windows), not PowerShell.**
+Many Windows machines run an **Application Control** policy (Smart App Control
+or a managed WDAC policy) that blocks freshly-installed command-line tools such
+as `helm` and `terraform` — they fail with *"An Application Control policy has
+blocked this file"*. That policy does not apply to Linux programs running inside
+WSL2, and the deploy scripts are bash scripts that belong in Linux anyway. So
+the reliable path — and the one this guide assumes from here on — is to run the
+whole deploy from WSL2.
+
+Docker Desktop already uses WSL2 under the hood, so this adds no new heavy
+software; you are just working in the Linux side of a machine you already have.
+
+> If you are certain Application Control is *not* enabled on your machine, you
+> can instead install the tools on Windows with `winget install Amazon.AWSCLI
+> Hashicorp.Terraform Helm.Helm jqlang.jq` and run everything from **Git Bash**.
+> But if `helm version` returns the Application Control error, stop and use WSL2
+> as below — mixing the two does not work, because logging in to the cluster
+> makes `helm` and `kubectl` call `aws`, so all the tools must live together.
 
 ---
 
-## Step 1 — Install the tools
+## Step 1 — Set up WSL2 and install the tools
 
-The deploy script checks for eight tools and refuses to run without them. You
-already have some (Docker, Git, Node, kubectl came with Docker Desktop). Install
-the rest.
+### 1a. Confirm WSL2 is present
 
-Open **PowerShell** (just for this step — `winget` is a Windows installer) and
-run:
+In **PowerShell**, run:
 
 ```powershell
-winget install Amazon.AWSCLI
-winget install Hashicorp.Terraform
-winget install Helm.Helm
-winget install jqlang.jq
+wsl -l -v
 ```
 
-Then **close and reopen** all terminals so they pick up the new tools.
+If you see a distribution (e.g. `Ubuntu`) with `VERSION 2`, you are ready — open
+it from the Start menu by typing "Ubuntu". If the command errors or lists
+nothing, install it once with `wsl --install` (from an **Administrator**
+PowerShell), then **restart the computer** and open Ubuntu from the Start menu;
+it will ask you to create a Linux username and password the first time.
 
-Now back in **Git Bash**, check everything is present:
+### 1b. Connect Docker Desktop to WSL2
+
+Docker Desktop → **Settings** → **Resources** → **WSL Integration** → enable the
+toggle for your Ubuntu distribution → **Apply & Restart**. This lets `docker`
+work from inside Ubuntu, which the image build needs.
+
+### 1c. Install the tools (inside Ubuntu — none of these are blocked)
+
+Open **Ubuntu** and paste these blocks one at a time:
 
 ```bash
-aws --version
-terraform -version
-kubectl version --client
-helm version
-docker --version
-git --version
-jq --version
-node --version && npm --version
+sudo apt update && sudo apt install -y unzip jq
 ```
 
-Each should print a version. If one says "command not found", re-install it. If
-`winget` cannot find a package, search the tool's name + "windows download" and
-use the official installer.
+```bash
+# AWS CLI v2
+curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/aws.zip
+cd /tmp && unzip -q aws.zip && sudo ./aws/install && cd -
+```
 
-**Docker Desktop must be running** — look for the whale icon in your system
-tray. The script builds a container image, which needs the Docker engine up.
+```bash
+# Terraform
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update && sudo apt install -y terraform
+```
+
+```bash
+# Helm
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+```bash
+# kubectl
+sudo curl -sL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
+sudo chmod +x /usr/local/bin/kubectl
+```
+
+### 1d. Check everything runs
+
+```bash
+aws --version && terraform -version && helm version && kubectl version --client && jq --version && docker --version && node --version
+```
+
+Every line should print a version and nothing should say "blocked" or "command
+not found". If `docker` fails, re-do step 1b. If `node` is missing, install it
+with `sudo apt install -y nodejs npm`.
+
+**Docker Desktop must be running** whenever you deploy — look for the whale icon
+in your Windows system tray. The build step needs the engine up.
 
 ---
 
@@ -107,9 +151,10 @@ You should not use your root account for day-to-day work. Create an admin user:
    now** — the secret is shown only once. (If you lose it, just delete the key
    and make a new one.)
 
-### 2d. Tell your computer about the credentials
+### 2d. Tell WSL about the credentials
 
-In **Git Bash**:
+In **Ubuntu** (WSL has its own home directory, separate from Windows, so this
+must be done here even if you ran it on Windows before):
 
 ```bash
 aws configure
@@ -135,15 +180,18 @@ see an error, the keys are wrong — re-run `aws configure`.
 
 ## Step 3 — Create your config file
 
-The deploy reads one settings file. Copy the example and edit it:
+The deploy reads one settings file. In **Ubuntu**, go to the project (your
+Windows files appear under `/mnt/c`) and copy the example:
 
 ```bash
-cd /c/Users/baghe/OneDrive/Desktop/SafeShield
+cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
 cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
 ```
 
-Open `deploy/terraform/ondemand.tfvars` in a text editor (VS Code, Notepad) and
-set two things:
+Open `deploy/terraform/ondemand.tfvars` in a text editor and set two things.
+The file is under your Windows Desktop, so you can edit it in Notepad or VS Code
+on the Windows side — or from Ubuntu with `nano deploy/terraform/ondemand.tfvars`
+(save with Ctrl+O, Enter, then Ctrl+X):
 
 ```hcl
 deletion_protection = false            # leave this false, or you cannot tear down
@@ -151,8 +199,8 @@ billing_alarm_email = "you@example.com"  # <- your real email
 ```
 
 Leave everything else as-is. **If you chose a region other than `ap-south-1`**
-in Step 2d, also add a line `region = "your-region"` here, and set it in Git
-Bash for this session: `export AWS_REGION=your-region`.
+in Step 2d, also add a line `region = "your-region"` here, and set it in Ubuntu
+for this session: `export AWS_REGION=your-region`.
 
 Save the file. (It is gitignored, so your email never gets committed.)
 
@@ -259,12 +307,16 @@ terraform -chdir=deploy/terraform-frontend destroy
 
 ## If something goes wrong
 
+- **"An Application Control policy has blocked this file" (helm/terraform on
+  Windows):** this is the reason the guide uses WSL2. Do not fight it on
+  Windows — run the deploy from Ubuntu (Step 1).
 - **A script errors with `'\r'` or "bad interpreter":** the file has Windows
   line endings. Fix it once with:
-  `sed -i 's/\r$//' deploy/scripts/*.sh` and run again.
-- **"missing required tool":** re-do Step 1 for that tool and reopen Git Bash.
+  `sed -i 's/\r$//' deploy/scripts/*.sh` and run again. (This is rare in WSL2.)
+- **"missing required tool":** re-do Step 1c for that tool in Ubuntu.
 - **"AWS credentials are not configured":** your session expired or keys are
-  wrong — re-run `aws configure` (Step 2d).
+  wrong — re-run `aws configure` (Step 2d). Remember WSL has its own credentials,
+  separate from Windows.
 - **A pod will not start, or the URL never loads:** the three things a local
   test could not check are IRSA (the app's permission to reach S3), the S3
   bucket, and the load balancer getting a public address. Run
@@ -280,13 +332,14 @@ terraform -chdir=deploy/terraform-frontend destroy
 ## The whole thing, condensed
 
 ```bash
-# one-time setup
-winget install Amazon.AWSCLI Hashicorp.Terraform Helm.Helm jqlang.jq   # (in PowerShell)
+# one-time setup, all inside Ubuntu (WSL2)
+#   install aws, terraform, helm, kubectl, jq  (see Step 1c)
 aws configure                                                          # keys + ap-south-1 + json
+cd /mnt/c/Users/baghe/OneDrive/Desktop/SafeShield
 cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
 #   ...edit that file: billing_alarm_email
 
-# every session
+# every session (from Ubuntu, Docker Desktop running)
 deploy/scripts/up.sh      # first time: stops once to set the secret, then re-run
 #   ...use the printed Frontend URL...
 deploy/scripts/down.sh    # ALWAYS, when finished
