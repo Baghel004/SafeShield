@@ -20,7 +20,14 @@ here
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$1"; }
 need() { command -v "$1" >/dev/null || { echo "missing required tool: $1" >&2; exit 1; }; }
-for t in aws terraform kubectl helm docker git; do need "$t"; done
+# jq parses the Secrets Manager JSON; npm builds the frontend. Both are used
+# far enough into the run that discovering they are missing at that point wastes
+# the ~20 minutes already spent provisioning.
+for t in aws terraform kubectl helm docker git jq npm; do need "$t"; done
+
+# Fail now, not after apply, if the caller has no working AWS credentials.
+aws sts get-caller-identity >/dev/null 2>&1 \
+  || { echo "AWS credentials are not configured or have expired. Run 'aws configure' or refresh your SSO session." >&2; exit 1; }
 
 IMAGE_TAG="$(git rev-parse --short HEAD)"
 
@@ -62,7 +69,26 @@ step "Loading secrets into the cluster"
 DB_SECRET="$(terraform -chdir="$TF_BACKEND" output -raw database_secret_name)"
 APP_SECRET="$(terraform -chdir="$TF_BACKEND" output -raw app_secret_name)"
 DB_JSON="$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$DB_SECRET" --query SecretString --output text)"
-APP_JSON="$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$APP_SECRET" --query SecretString --output text)"
+APP_JSON="$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$APP_SECRET" --query SecretString --output text 2>/dev/null || echo '{}')"
+
+# Terraform creates the app secret's container but never its values -- anything
+# it wrote would land in state in plaintext. So on a first run the secret is
+# empty, and deploying that would ship the app a literal "null" JWT key and no
+# OpenAI key: it would boot, then refuse every request. Stop here with the exact
+# command instead. Terraform is idempotent, so re-running up.sh after populating
+# it picks straight up from the fast path.
+if [ -z "$(jq -r '.JWT_SECRET // empty' <<<"$APP_JSON")" ] \
+   || [ -z "$(jq -r '.OPENAI_API_KEY // empty' <<<"$APP_JSON")" ]; then
+  cat >&2 <<EOF
+
+The application secret is not populated yet. Set it once, then re-run this script:
+
+  aws secretsmanager put-secret-value --region $REGION --secret-id $APP_SECRET \\
+    --secret-string '{"JWT_SECRET":"'"\$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"'","OPENAI_API_KEY":"sk-..."}'
+
+EOF
+  exit 1
+fi
 
 kubectl -n "$NAMESPACE" create secret generic safeshield-secrets \
   --from-literal=DATABASE_URL="$(jq -r .DATABASE_URL <<<"$DB_JSON")" \

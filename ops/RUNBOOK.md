@@ -115,6 +115,92 @@ two API replicas — a configuration that would expose them immediately.
 
 ---
 
+## Pre-flight checklist
+
+Everything that must be true before `up.sh` will succeed. `up.sh` checks the
+mechanical items itself and stops early with a message; this list is so the
+first run is not the first time you find out.
+
+### 1. Local tools
+
+`up.sh` refuses to start without all of these on `PATH`:
+
+```bash
+aws --version        # v2
+terraform -version   # >= 1.9
+kubectl version --client
+helm version         # v3
+docker info          # daemon must be running -- up.sh builds the image
+git --version
+jq --version         # parses the Secrets Manager JSON
+node --version && npm --version   # builds the frontend
+```
+
+### 2. AWS account and credentials
+
+- `aws sts get-caller-identity` must succeed. `up.sh` runs this first and stops
+  if it fails, so an expired SSO session is caught before anything is created.
+- The identity needs to create and destroy across **EKS, EC2/VPC, RDS,
+  ElastiCache, S3, ECR, IAM, Secrets Manager, CloudWatch and SNS**. For a
+  personal demo account an admin-equivalent policy is simplest; on a shared
+  account, scope a role to those services.
+- **Region** defaults to `ap-south-1` everywhere (Terraform vars and the
+  scripts). To use another, set `AWS_REGION` *and* pass a matching `region` in
+  `ondemand.tfvars` — a mismatch provisions in one region and looks in another.
+- **Service quotas** on a brand-new account occasionally bite: EKS needs a spare
+  Elastic IP for the NAT gateway (default limit 5, usually fine) and the default
+  VPC limit is 5. Neither is normally a problem, but they surface as a confusing
+  mid-apply failure if they are.
+
+### 3. Configuration
+
+```bash
+cp deploy/terraform/ondemand.tfvars.example deploy/terraform/ondemand.tfvars
+```
+
+Edit it and confirm:
+- `deletion_protection = false` — or `down.sh` cannot drop the database.
+- `billing_alarm_email` — a real address; confirm the SNS subscription from the
+  email AWS sends, once, or the alarm has nowhere to deliver.
+
+The file is gitignored. `up.sh` reads it via the `TFVARS` variable (default
+`ondemand.tfvars`).
+
+### 4. The one ordering gotcha — the application secret
+
+Terraform creates the Secrets Manager *entry* for `JWT_SECRET` and
+`OPENAI_API_KEY` but never its *values*: anything Terraform sets lands in state
+in plaintext. So on the very first run the secret is empty.
+
+`up.sh` handles this deliberately. It provisions (which creates the empty
+secret), then checks the secret is populated before deploying, and if it is not,
+**stops and prints the exact command to run**:
+
+```bash
+aws secretsmanager put-secret-value --region ap-south-1 --secret-id safeshield-prod/app \
+  --secret-string '{"JWT_SECRET":"'"$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"'","OPENAI_API_KEY":"sk-..."}'
+```
+
+Run that, then run `up.sh` again. Terraform is idempotent, so the second run
+skips straight past the ~20 minutes of provisioning already done and continues
+from the secret step. This only happens on the first-ever apply; the value
+persists across teardowns (Secrets Manager is not destroyed by `down.sh`).
+
+### 5. State, and the discipline that keeps the bill at zero
+
+- **Terraform state is local by default** (the S3 backend in `versions.tf` is
+  commented out). Fine for a solo on-demand demo, but the state file is then the
+  only record of what exists — lose it and `destroy` cannot find the resources
+  to remove. Back up `deploy/terraform/terraform.tfstate`, or uncomment the S3
+  backend and bootstrap the bucket once by hand.
+- **The bill comes from forgetting `down.sh`, or from a teardown that
+  half-failed.** `down.sh` verifies against the AWS API that nothing survived
+  and exits non-zero if something did — believe it over a "destroy complete"
+  message. Roughly $0.28/hour means a session left running over a weekend is
+  ~$14; over a month, the full ~$210.
+
+---
+
 ## On-demand deploy (the intended workflow)
 
 The backend is not meant to run 24/7. It is brought up for a session and torn
