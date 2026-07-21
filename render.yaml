@@ -24,11 +24,13 @@ services:
     plan: free
     region: singapore # closest free region to the ap-south users; change freely
     healthCheckPath: /api/health
-    # Run migrations against Neon on every deploy, then start the API. Alembic
-    # is idempotent, so this is safe to repeat, and it means the schema is never
-    # a manual step. Seeding the corpus is still done once from a laptop -- the
-    # sample PDFs are not in the image.
-    dockerCommand: sh -c "alembic upgrade head && python run.py"
+    # Migrations run inside this start script, then the API starts. It is a
+    # script rather than `sh -c "alembic ... && python ..."` because a start
+    # command with a `&&` in it is passed to exec without a shell on some hosts
+    # and fails as one unknown program name (exit 127). A single operator-free
+    # command avoids that. Seeding the corpus is still a one-off from a laptop --
+    # the sample PDFs are not in the image.
+    dockerCommand: sh scripts/start.sh
     envVars:
       - key: ENV
         value: prod
