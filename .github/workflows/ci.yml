@@ -308,7 +308,7 @@ jobs:
           # down and the stack keeps billing. shellcheck catches the obvious
           # ones before they run against a live account.
           docker run --rm -v "$PWD:/work" -w /work koalaman/shellcheck:stable \
-            deploy/scripts/up.sh deploy/scripts/down.sh
+            deploy/scripts/up.sh deploy/scripts/down.sh deploy/scripts/deploy-frontend.sh
 
   security:
     name: Security scan

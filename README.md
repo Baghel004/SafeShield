@@ -359,10 +359,11 @@ to a live cluster or a real AWS account — the first apply is a deliberate act.
 ### A free tier, from the same code
 
 The EKS deployment demonstrates the scalable design; it also needs a paid AWS
-account and a local toolchain. `render.yaml` and
-[`docs/DEPLOY-FREE.md`](docs/DEPLOY-FREE.md) are the other end of the spectrum: a
-single web instance on Render, a Neon Postgres, and no Redis — built from GitHub
-with no local tooling at all, at zero hosting cost.
+account. `render.yaml` and [`docs/DEPLOY-FREE.md`](docs/DEPLOY-FREE.md) are the
+other end of the spectrum — a free hybrid at zero hosting cost: the frontend on
+S3 + CloudFront (the same `deploy/terraform-frontend`, both free-tier eligible),
+the backend on a single Render web service built from GitHub, and Neon for
+Postgres. No Redis.
 
 The one thing that made this possible without a code fork is a single switch.
 `REDIS_ENABLED=false` folds the two extra moving parts into the web process:
