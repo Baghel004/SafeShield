@@ -36,7 +36,11 @@ def client_key(request: Request) -> str:
 
 
 def _storage_uri() -> str | None:
-    if not settings.RATE_LIMIT_ENABLED:
+    # No Redis URI in single-process mode: the limiter then keeps its counters
+    # in memory. That is not merely a fallback but the correct choice there --
+    # with one instance there is nothing to share state across, so an in-memory
+    # window is exactly right and needs no external service.
+    if not settings.RATE_LIMIT_ENABLED or not settings.REDIS_ENABLED:
         return None
     return settings.REDIS_URL
 

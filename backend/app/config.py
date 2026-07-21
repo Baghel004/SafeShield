@@ -51,6 +51,12 @@ class Settings(BaseSettings):
 
     # --- Redis / background jobs ---
     REDIS_URL: str = "redis://localhost:6379/0"
+    # When false, the app runs without Redis at all: rate limiting is kept in
+    # process memory, and document ingestion runs inside the API process instead
+    # of being handed to the ARQ worker. This is the single-process mode used for
+    # a free-tier deployment (one web dyno, no separate worker, no queue). The
+    # full deployment leaves this true and runs the worker.
+    REDIS_ENABLED: bool = True
 
     # --- Observability ---
     # Plain text is easier to read while developing; JSON is the only format a

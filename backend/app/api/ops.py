@@ -45,12 +45,16 @@ async def ready(db: DbSession, response: Response) -> dict[str, object]:
     Returns 503 when a dependency is unavailable so a load balancer removes
     this instance, rather than routing requests that are certain to fail.
     """
-    checks = await asyncio.gather(
-        _check_database(db),
-        _check_redis(),
-        return_exceptions=False,
-    )
-    results = dict(checks)
+    from app.config import settings
+
+    probes = [_check_database(db)]
+    # Only probe Redis when the deployment actually uses it. In single-process
+    # mode there is no Redis, and reporting it "down" would make the host's
+    # health check fail a service that is in fact healthy.
+    if settings.REDIS_ENABLED:
+        probes.append(_check_redis())
+
+    results = dict(await asyncio.gather(*probes, return_exceptions=False))
 
     ok = all(v == "ok" for v in results.values())
     if not ok:

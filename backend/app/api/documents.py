@@ -6,6 +6,7 @@ client polls GET /api/documents/{id} until status is `ready` or `failed`.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Annotated
@@ -70,11 +71,17 @@ async def upload_document(
 
 
 async def _enqueue_ingestion(document_id: uuid.UUID) -> None:
-    """Queue the ingestion job.
+    """Hand the upload off to be ingested.
 
-    A queue outage must not lose the upload: the document row is already saved as
-    `pending`, so the job can be re-driven later.
+    Two modes. With Redis, the job goes to the ARQ worker (the scalable path).
+    Without it, ingestion runs in this process as a background task -- the
+    single-process free-tier deployment, where there is no worker to hand to.
+    Either way the upload endpoint returns immediately and the client polls.
     """
+    if not settings.REDIS_ENABLED:
+        _ingest_in_process(document_id)
+        return
+
     try:
         from arq import create_pool
         from arq.connections import RedisSettings
@@ -95,6 +102,41 @@ async def _enqueue_ingestion(document_id: uuid.UUID) -> None:
         logger.warning(
             "Could not enqueue ingestion for %s; document left pending", document_id, exc_info=True
         )
+
+
+def _ingest_in_process(document_id: uuid.UUID) -> None:
+    """Ingest without a worker, as a fire-and-forget background task.
+
+    Correct for the free-tier deployment: one instance, low upload volume, and
+    the shared corpus is pre-seeded so uploads are the exception rather than the
+    rule. Extraction is CPU-bound and briefly occupies the event loop, which is
+    an acceptable trade at that scale but is exactly why the scalable deployment
+    keeps this in a separate worker instead.
+    """
+    from app.core.storage import get_storage
+    from app.db import SessionLocal
+    from app.rag.embed import get_embedding_provider
+    from app.rag.ingest import ingest_document
+
+    async def _run() -> None:
+        try:
+            with get_storage().as_local_path(document_id) as path:
+                await ingest_document(SessionLocal, document_id, path, get_embedding_provider())
+        except Exception:
+            # ingest_document already marks the document failed on a fresh
+            # session; this only records that the background task itself died.
+            logger.exception("In-process ingestion failed for %s", document_id)
+
+    # Held in a set so the task is not garbage-collected mid-run: asyncio keeps
+    # only a weak reference to bare tasks.
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+# Module-level so in-flight tasks are not garbage-collected: asyncio holds only
+# a weak reference to a bare create_task result.
+_background_tasks: set[asyncio.Task[None]] = set()
 
 
 @router.get("", response_model=DocumentListResponse)

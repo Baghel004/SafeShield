@@ -1,0 +1,87 @@
+# Render Blueprint — free-tier deployment.
+#
+# The whole point of this file is that it needs none of the locally-installed
+# tooling the EKS path requires (aws, terraform, helm, kubectl) -- Render builds
+# both services straight from this repo on GitHub. Import it at
+# https://render.com > New > Blueprint, point it at the repo, and set the three
+# secret values it asks for.
+#
+# Shape: one web service (the FastAPI app, no separate worker, no Redis) plus a
+# static site (the React build). The database is Neon, configured by its URL.
+#
+# This is deliberately the *small* deployment. The full, scalable one lives in
+# deploy/ (Helm + Terraform for EKS) and is unchanged.
+
+services:
+  # --- Backend: the FastAPI app as a single web service --------------------
+  - type: web
+    name: safeshield-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: singapore # closest free region to the ap-south users; change freely
+    healthCheckPath: /api/health
+    # Run migrations against Neon on every deploy, then start the API. Alembic
+    # is idempotent, so this is safe to repeat, and it means the schema is never
+    # a manual step. Seeding the corpus is still done once from a laptop -- the
+    # sample PDFs are not in the image.
+    dockerCommand: sh -c "alembic upgrade head && python run.py"
+    envVars:
+      - key: ENV
+        value: prod
+      - key: DEBUG
+        value: "false"
+      - key: JSON_LOGS
+        value: "true"
+      - key: COOKIE_SECURE
+        value: "true"
+      # The frontend and API are on different *.onrender.com subdomains, which
+      # browsers treat as cross-site. A lax cookie would not be sent on the
+      # frontend's requests to the API, so the refresh token has to be
+      # SameSite=None -- which is only allowed together with Secure, set above.
+      - key: COOKIE_SAMESITE
+        value: none
+      # The switch that makes single-process mode work: no Redis, ingestion in
+      # the API process, rate limiting in memory.
+      - key: REDIS_ENABLED
+        value: "false"
+      # Uploads land on the instance's ephemeral disk. Fine here: the shared
+      # corpus is pre-seeded into the database, so uploads are the exception,
+      # and a free instance is single-replica so there is nothing to share to.
+      - key: STORAGE_BACKEND
+        value: local
+      # Signing key for sessions -- generated once by Render and kept secret.
+      - key: JWT_SECRET
+        generateValue: true
+      # Set these in the Render dashboard (marked secret; never in git):
+      #   DATABASE_URL   -> the Neon connection string, with +psycopg, e.g.
+      #     postgresql+psycopg://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require
+      #   OPENAI_API_KEY -> your key
+      #   CORS_ORIGINS   -> the frontend URL below, as a JSON list, e.g.
+      #     ["https://safeshield-frontend.onrender.com"]
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+  # --- Frontend: the React build as a static site -------------------------
+  - type: web
+    name: safeshield-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    # SPA routing: /chat and /documents are React Router paths, not files, so
+    # every path serves index.html and the router takes over.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # Baked into the bundle at build time -- point it at the API service above
+      # once it has a URL (https://safeshield-api.onrender.com). Set in the
+      # dashboard after the first deploy, then trigger a rebuild.
+      - key: VITE_API_BASE_URL
+        sync: false

@@ -356,6 +356,23 @@ the real AWS provider and modules, and validate; the deploy scripts pass
 shellcheck. CI runs the chart and Terraform checks. None of it has been applied
 to a live cluster or a real AWS account — the first apply is a deliberate act.
 
+### A free tier, from the same code
+
+The EKS deployment demonstrates the scalable design; it also needs a paid AWS
+account and a local toolchain. `render.yaml` and
+[`docs/DEPLOY-FREE.md`](docs/DEPLOY-FREE.md) are the other end of the spectrum: a
+single web instance on Render, a Neon Postgres, and no Redis — built from GitHub
+with no local tooling at all, at zero hosting cost.
+
+The one thing that made this possible without a code fork is a single switch.
+`REDIS_ENABLED=false` folds the two extra moving parts into the web process:
+rate limiting keeps its counters in memory (correct on one instance — there is
+nothing to share state across), and document ingestion runs as a background task
+in the API rather than being handed to the ARQ worker. Everything else — the
+image, the endpoints, the RAG pipeline — is byte-for-byte the same. It is the
+storage-interface lesson again: the deployment shape is configuration, not a
+different application.
+
 ---
 
 ## Running locally
