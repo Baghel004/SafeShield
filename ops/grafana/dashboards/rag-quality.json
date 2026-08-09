@@ -1,0 +1,343 @@
+{
+  "uid": "safeshield-rag",
+  "title": "SafeShield — RAG quality and cost",
+  "description": "Whether the pipeline is any good, and what it costs. A service dashboard cannot see any of this: a pipeline that retrieves nothing, refuses everything and returns 200 in 40ms looks perfect there.",
+  "tags": ["safeshield", "rag"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Answer quality",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Refusal rate",
+      "description": "Refusing is correct when the corpus cannot answer. Refusing most questions means retrieval has degraded — an empty index, a broken migration, or embeddings written by a different model.",
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(safeshield_answers_total{outcome=\"refused\"}[30m])) / clamp_min(sum(rate(safeshield_answers_total[30m])), 0.0001)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.3 },
+              { "color": "red", "value": 0.5 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "p95 time to first token",
+      "description": "What the user actually waits for. Total duration hides this — a slow first token and a slow stream look identical there, and only one feels broken.",
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 1 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(safeshield_answer_time_to_first_token_seconds_bucket[15m])))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 3 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Median chunks retrieved",
+      "description": "Should sit at the configured top-k. Falling towards zero means the index is empty or unreachable.",
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 1 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(safeshield_retrieval_chunks_bucket[15m])))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "green", "value": 4 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "p95 retrieval",
+      "description": "Includes the query embedding call, which is usually the slow part.",
+      "gridPos": { "h": 5, "w": 4, "x": 15, "y": 1 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(safeshield_retrieval_duration_seconds_bucket[15m])))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "OpenAI errors / min",
+      "gridPos": { "h": 5, "w": 5, "x": 19, "y": 1 },
+      "targets": [
+        { "expr": "sum(rate(safeshield_openai_errors_total[10m])) * 60", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Answer outcomes",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(safeshield_answers_total[5m])) * 60",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 25, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "grounded" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "refused" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Which retriever found the results",
+      "description": "The most important panel here. If 'sparse' and 'both' flatline while queries keep running, the lexical half has silently died — exactly the failure where plainto_tsquery ANDed every term and natural-language questions matched nothing. Latency and error rate looked perfect throughout.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "expr": "sum by (source) (rate(safeshield_retrieval_contributors_total[5m]))",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 25, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Top fused score (RRF)",
+      "description": "The score of the best chunk per query. Collapsing towards zero means nothing is matching on either retriever, and answers are about to become refusals.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(safeshield_retrieval_top_score_bucket[15m])))",
+          "legendFormat": "median",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.10, sum by (le) (rate(safeshield_retrieval_top_score_bucket[15m])))",
+          "legendFormat": "10th percentile",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 4, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Answer latency percentiles",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(safeshield_answer_duration_seconds_bucket[15m])))",
+          "legendFormat": "p50 total",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(safeshield_answer_duration_seconds_bucket[15m])))",
+          "legendFormat": "p95 total",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(safeshield_answer_time_to_first_token_seconds_bucket[15m])))",
+          "legendFormat": "p95 first token",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "type": "row",
+      "title": "Cost",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Token burn by kind",
+      "description": "The only metric here that maps to money. This project runs on a budget under $10/month, and a scripted loop can spend that in an afternoon — without this the first sign is the invoice.",
+      "gridPos": { "h": 7, "w": 16, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "sum by (kind) (rate(safeshield_openai_tokens_total[10m])) * 60",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 25, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Tokens / hour (projected)",
+      "description": "Extrapolated from the last 10 minutes. Alerts above 500k/hour.",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 22 },
+      "targets": [
+        { "expr": "sum(rate(safeshield_openai_tokens_total[10m])) * 3600", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 250000 },
+              { "color": "red", "value": 500000 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Ingestion",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingestion outcomes",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 30 },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (increase(safeshield_ingestions_total[15m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 25, "lineWidth": 1, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "failed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "succeeded" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue depth and pending documents",
+      "description": "Sustained pending means jobs are not being picked up — the failure the requeue sweep exists to correct.",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 30 },
+      "targets": [
+        { "expr": "safeshield_queue_depth", "legendFormat": "queued jobs", "refId": "A" },
+        { "expr": "safeshield_documents_pending", "legendFormat": "pending documents", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingestion duration",
+      "description": "A 400-page policy legitimately takes minutes; the job timeout is 30.",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 30 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(safeshield_ingestion_duration_seconds_bucket[1h])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(safeshield_ingestion_duration_seconds_bucket[1h])))",
+          "legendFormat": "p50",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,192 @@
+# Alert rules.
+#
+# Each of these has to answer "what would I do about it at 3am". A rule nobody
+# acts on trains people to ignore the whole page, so symptoms are alerted on --
+# users affected, money spent, work not progressing -- rather than causes.
+#
+# The RAG rules are the ones a generic template would not have, and they cover
+# the failures this project has actually had: a silently dead sparse retriever,
+# and a missing API key indexing the corpus with noise while reporting healthy.
+
+groups:
+  - name: availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"api|worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is not being scraped"
+          description: >-
+            The target has been unreachable for a minute. If it is the worker,
+            uploads are accepted but never ingested; the requeue sweep will
+            re-drive them once it returns.
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(safeshield_http_requests_total{status="5xx"}[5m]))
+            / sum(rate(safeshield_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Over 5% of requests are failing"
+          description: "5xx rate is {{ $value | humanizePercentage }} over 5 minutes."
+
+      - alert: SlowRequests
+        # The 95th percentile, not the mean: an average hides the tail, and the
+        # tail is what users report. Chat is excluded because a grounded answer
+        # legitimately takes seconds -- it has its own rule below.
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, route) (
+              rate(safeshield_http_request_duration_seconds_bucket{route!~"/api/chat.*"}[5m])
+            )
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency above 2s on {{ $labels.route }}"
+
+  - name: rag_quality
+    rules:
+      - alert: SparseRetrievalDead
+        # The failure that already happened once: plainto_tsquery ANDs every
+        # term, so natural-language questions matched nothing and the lexical
+        # half was silently dead while latency and error rate looked perfect.
+        # Nothing but a metric like this would have caught it.
+        expr: |
+          sum(rate(safeshield_retrieval_contributors_total{source=~"sparse|both"}[15m])) == 0
+            and sum(rate(safeshield_retrieval_contributors_total[15m])) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Sparse retrieval has stopped contributing any results"
+          description: >-
+            Retrieval is running and returning chunks, but none come from the
+            full-text half. Answers will be degraded without any error being
+            raised. Check the tsvector trigger and the tsquery rewrite.
+
+      - alert: HighRefusalRate
+        # Refusing is correct when the corpus cannot answer. Refusing *most*
+        # questions means retrieval has degraded -- an empty index, a broken
+        # migration, or embeddings written with the wrong model.
+        expr: |
+          sum(rate(safeshield_answers_total{outcome="refused"}[30m]))
+            / sum(rate(safeshield_answers_total[30m])) > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over half of answers are refusals"
+          description: "Refusal rate {{ $value | humanizePercentage }}. Retrieval is likely broken."
+
+      - alert: RetrievalReturnsNothing
+        expr: |
+          histogram_quantile(0.5, sum by (le) (rate(safeshield_retrieval_chunks_bucket[15m]))) < 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Median query retrieves no chunks"
+          description: "The index is empty or unreachable."
+
+      - alert: SlowAnswers
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(safeshield_answer_time_to_first_token_seconds_bucket[10m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 time to first token above 5s"
+          description: "Users watch a spinner this long before any text appears."
+
+  - name: cost
+    rules:
+      - alert: TokenSpendSpike
+        # This project runs on a budget under $10/month. A scripted loop can
+        # spend that in an afternoon, and the first sign would otherwise be the
+        # invoice. Threshold set well above normal interactive use.
+        expr: sum(rate(safeshield_openai_tokens_total[10m])) * 3600 > 500000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OpenAI token burn is unusually high"
+          description: >-
+            Projected {{ $value | humanize }} tokens/hour. Check the rate limits
+            and whether one client is looping.
+
+      - alert: OpenAIErrors
+        expr: sum(rate(safeshield_openai_errors_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OpenAI calls are failing ({{ $labels.operation }})"
+
+  - name: ingestion
+    rules:
+      - alert: DocumentsStuckPending
+        # The upload path deliberately swallows a queue failure, on the basis
+        # that something re-drives the work. This is what verifies that claim.
+        expr: safeshield_documents_pending > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} document(s) pending for over 30 minutes"
+          description: "Jobs are not being picked up. Check the worker and Redis."
+
+      - alert: QueueBacklog
+        expr: safeshield_queue_depth > 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ingestion queue is backing up ({{ $value }} jobs)"
+
+      - alert: IngestionFailing
+        expr: |
+          sum(rate(safeshield_ingestions_total{outcome="failed"}[1h]))
+            / sum(rate(safeshield_ingestions_total[1h])) > 0.25
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over a quarter of ingestions are failing"
+
+  - name: dependencies
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres is unreachable"
+
+      - alert: PostgresConnectionsHigh
+        expr: |
+          sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Postgres connection pool over 80% used"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is unreachable"
+          description: >-
+            Ingestion stops and rate limiting falls back to in-process counters,
+            which do not hold across replicas.

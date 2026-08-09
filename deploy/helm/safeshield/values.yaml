@@ -1,0 +1,142 @@
+# Defaults suit a real cluster, not a demo: two API replicas, no secrets in
+# this file, and object storage rather than a container-local directory.
+#
+# Anything marked "must be set" has no sensible default and the chart fails
+# rendering without it. That is deliberate — a chart that installs with a
+# placeholder database URL produces a running pod that cannot serve a request.
+
+image:
+  repository: ghcr.io/baghel004/safeshield-api
+  # Pinned by CI to the commit sha. `latest` makes a rollout unreproducible and
+  # a rollback meaningless, since the tag has already moved.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+api:
+  # Two, not one: a single replica means every deploy and every node drain is
+  # an outage. The PDB below only has something to protect above one.
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      # No CPU limit. Throttling a request-serving process to save cycles it
+      # is not using adds latency for nothing; the request is what schedules.
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+worker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      # Higher than the API: extraction holds a whole PDF and its parsed
+      # blocks in memory, and a 400-page policy is not small.
+      memory: 1Gi
+  autoscaling:
+    enabled: false
+
+migrations:
+  # Runs as a pre-install/pre-upgrade hook, so it completes before any new pod
+  # starts. Previously this was in the API's start command, which is a race the
+  # moment there is more than one replica.
+  enabled: true
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+  host: ""
+  tls:
+    enabled: true
+    secretName: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  # The app never calls the Kubernetes API. IRSA does not depend on this token
+  # — the EKS webhook injects a separate projected one — but flip it to true if
+  # a pod turns out to be unable to reach S3.
+  automountToken: false
+  annotations: {}
+  # Set by Terraform to the IRSA role that grants S3 access:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/safeshield-app
+  # Static AWS keys in a Secret would be one more credential to rotate and leak.
+
+config:
+  env: prod
+  logLevel: info
+  jsonLogs: true
+  # Must be set: the exact https origin of the deployed frontend. A mismatch is
+  # a CORS failure in the browser before the request is ever sent.
+  corsOrigins: []
+  storage:
+    # "s3" is required above one replica. With "local", an upload handled by
+    # one pod is invisible to the worker and to every other pod, and ingestion
+    # fails with a missing file — only under the scaling this chart is for.
+    backend: s3
+    bucket: ""
+    prefix: documents
+  retrieval:
+    topK: 6
+    candidates: 30
+  openai:
+    embeddingModel: text-embedding-3-small
+    chatModel: gpt-4o-mini
+    timeoutSeconds: 30
+
+# Secrets are referenced, never defined here. Create the Secret from Secrets
+# Manager (External Secrets Operator, or `kubectl create secret`), and keep the
+# values out of git and out of `helm get values`.
+existingSecret:
+  name: safeshield-secrets
+  keys:
+    databaseUrl: DATABASE_URL
+    redisUrl: REDIS_URL
+    jwtSecret: JWT_SECRET
+    openaiApiKey: OPENAI_API_KEY
+
+serviceMonitor:
+  # Requires the Prometheus Operator. The application already exposes /metrics
+  # on the API and on the worker's own port; this only tells Prometheus to
+  # scrape them.
+  enabled: true
+  interval: 15s
+  labels: {}
+
+networkPolicy:
+  # Default-deny ingress except from the ingress controller and Prometheus. A
+  # compromised pod elsewhere in the cluster should not be able to reach the
+  # API directly.
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

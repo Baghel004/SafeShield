@@ -1,0 +1,35 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "comment": "Client-side routing: /chat and /documents are React Router paths, not files. Without this a reload or a shared link 404s, because the static host looks for /chat/index.html and finds nothing.",
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "comment": "Vite fingerprints these filenames, so a changed file gets a new URL and this can be cached indefinitely.",
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "comment": "Never cached: it is what points at the fingerprinted bundles, so a stale copy pins users to an old build.",
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ]
+}

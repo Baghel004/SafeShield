@@ -1,0 +1,10 @@
+apiVersion: v2
+name: safeshield
+description: RAG-powered insurance policy assistant — API, ingestion worker and migrations
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - rag
+  - fastapi
+home: https://github.com/Baghel004/SafeShield

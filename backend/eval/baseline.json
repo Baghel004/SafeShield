@@ -1,0 +1,17 @@
+{
+  "summary": {
+    "cases": 30,
+    "recall_at_5": 0.8462,
+    "recall_at_5_content": 0.8462,
+    "content_scored_cases": 26,
+    "recall_at_10": 0.8462,
+    "mrr": 0.5923,
+    "faithfulness": 0.7826,
+    "unfaithful_count": 0,
+    "term_accuracy": 0.5,
+    "refusal_accuracy": 0.9,
+    "refusal_cases": 4,
+    "median_latency_ms": 3882
+  },
+  "git_sha": "a1a546c"
+}

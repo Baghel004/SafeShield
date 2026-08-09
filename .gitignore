@@ -1,2 +1,63 @@
-/backend/node_modules
-/backend-python/venv
+# ---------------------------------------------------------------- SECRETS
+# Never commit these. .env.example documents every variable with placeholders.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+secrets.*
+.secrets/
+
+# ------------------------------------------------- USER-UPLOADED DOCUMENTS
+# Uploaded policies are personal data and must not enter the repository.
+# Sample policies under datasets/ are public insurer documents and are tracked.
+backend/uploads/
+backend-python/uploads/
+backend-python/persist/
+uploads/
+
+# ------------------------------------------------------------------ PYTHON
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# -------------------------------------------------------------------- NODE
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# -------------------------------------------------------------- EDITORS/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ------------------------------------------------------------------- LOCAL
+*.log
+.claude/
+
+# --- Terraform ---
+# Downloaded providers and modules: hundreds of megabytes, re-fetched by
+# `terraform init`, and platform-specific.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+# State can hold generated passwords in plaintext. Use the S3 backend.
+crash.log
+# tfvars routinely hold secrets; the example documents the shape instead.
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl

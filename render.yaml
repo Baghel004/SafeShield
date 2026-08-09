@@ -1,0 +1,73 @@
+# Render Blueprint — the backend half of the free hybrid deployment.
+#
+# This deploys ONLY the FastAPI app, straight from GitHub, with no locally
+# installed tooling. The frontend is hosted separately on AWS S3 + CloudFront
+# (both free-tier eligible, permanently free at this traffic) via
+# deploy/terraform-frontend and deploy/scripts/deploy-frontend.sh.
+#
+# Free hybrid, all $0:
+#   frontend -> S3 + CloudFront (AWS free tier)
+#   backend  -> this Render web service
+#   database -> Neon Postgres
+#
+# Import at https://render.com > New > Blueprint, point it at the repo, set the
+# secret values it asks for. The full scalable deployment (Helm + Terraform for
+# EKS) is separate and unchanged.
+
+services:
+  # --- Backend: the FastAPI app as a single web service --------------------
+  - type: web
+    name: safeshield-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: singapore # closest free region to the ap-south users; change freely
+    healthCheckPath: /api/health
+    # Migrations run inside this start script, then the API starts. It is a
+    # script rather than `sh -c "alembic ... && python ..."` because a start
+    # command with a `&&` in it is passed to exec without a shell on some hosts
+    # and fails as one unknown program name (exit 127). A single operator-free
+    # command avoids that. Seeding the corpus is still a one-off from a laptop --
+    # the sample PDFs are not in the image.
+    dockerCommand: sh scripts/start.sh
+    envVars:
+      - key: ENV
+        value: prod
+      - key: DEBUG
+        value: "false"
+      - key: JSON_LOGS
+        value: "true"
+      - key: COOKIE_SECURE
+        value: "true"
+      # The frontend (CloudFront) and this API (onrender.com) are different
+      # sites, so browsers treat the frontend's requests here as cross-site. A
+      # lax cookie would not be sent, so the refresh token has to be
+      # SameSite=None -- which is only allowed together with Secure, set above.
+      - key: COOKIE_SAMESITE
+        value: none
+      # The switch that makes single-process mode work: no Redis, ingestion in
+      # the API process, rate limiting in memory.
+      - key: REDIS_ENABLED
+        value: "false"
+      # Uploads land on the instance's ephemeral disk. Fine here: the shared
+      # corpus is pre-seeded into the database, so uploads are the exception,
+      # and a free instance is single-replica so there is nothing to share to.
+      - key: STORAGE_BACKEND
+        value: local
+      # Signing key for sessions -- generated once by Render and kept secret.
+      - key: JWT_SECRET
+        generateValue: true
+      # Set these in the Render dashboard (marked secret; never in git):
+      #   DATABASE_URL   -> the Neon connection string, with +psycopg, e.g.
+      #     postgresql+psycopg://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require
+      #   OPENAI_API_KEY -> your key
+      #   CORS_ORIGINS   -> the CloudFront URL as a JSON list, printed by
+      #     deploy/scripts/deploy-frontend.sh, e.g.
+      #     ["https://d111111abcdef8.cloudfront.net"]
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

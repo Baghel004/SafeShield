@@ -1,0 +1,19 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "safeshield.fullname" . }}-api
+  labels:
+    {{- include "safeshield.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  # Stops a node drain or cluster upgrade taking every API pod at once. It only
+  # protects anything above one replica -- with replicaCount 1 this would block
+  # drains entirely rather than preserving availability, which is why the
+  # default replica count is 2.
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "safeshield.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+{{- end }}

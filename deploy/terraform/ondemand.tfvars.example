@@ -1,0 +1,26 @@
+# On-demand configuration: bring the stack up for a session, tear it down after.
+#
+# Copy to ondemand.tfvars (gitignored) and pass it explicitly:
+#   terraform apply  -var-file=ondemand.tfvars
+#   terraform destroy -var-file=ondemand.tfvars
+#
+# The whole point is that `destroy` actually completes. With the default
+# deletion_protection = true, RDS refuses to drop and you are left paying for a
+# database you believed you had removed.
+
+# Let destroy remove the database. No final snapshot is taken -- for a demo with
+# a re-seedable corpus that is the intent, not a risk.
+deletion_protection = false
+
+# One NAT gateway instead of one per AZ. Halves the ~$0.045/hr NAT cost and
+# makes that AZ a single point of failure for outbound traffic, which does not
+# matter for a session that lasts an afternoon.
+single_nat_gateway = true
+
+# Smallest node group that fits the API, worker and in-cluster Prometheus.
+node_min_size = 2
+node_max_size = 3
+
+# The backstop. Confirm the SNS subscription email AWS sends, once.
+billing_alarm_email         = "you@example.com"
+billing_alarm_threshold_usd = 20

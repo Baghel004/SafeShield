@@ -1,642 +1,501 @@
 # SafeShield 🛡️
 
-A full-stack insurance company website featuring intelligent policy recommendations and an AI-powered chatbot to answer policy-related queries.
+A RAG-powered assistant for insurance policy documents. Ask questions in plain
+English and get answers grounded in your actual policy text, with citations to
+the source document, page, and clause.
+
+> **Demo project.** Uploaded documents are processed by a third-party LLM API and
+> can be deleted at any time. Not affiliated with any real insurer. Nothing here
+> is financial or legal advice.
 
 ---
 
-## 📋 Overview
+## Status
 
-**SafeShield** is a modern, intelligent insurance platform that helps users find the right insurance policies and get instant answers to their questions. It combines a powerful backend architecture with:
+Under active rebuild. The original version was a Node proxy in front of a
+FastAPI service doing pure retrieval — it returned concatenated document
+excerpts, not answers. It is being rebuilt as a single FastAPI service with a
+real RAG pipeline.
 
-- 🤖 **AI Policy Recommender** - Intelligent suggestions based on user needs
-- 💬 **Intelligent Chatbot** - Real-time answers to policy questions
-- 📄 **Semantic Search** - Search through policy documents using natural language
-- 🔍 **RAG-based Q&A** - Retrieval-Augmented Generation for accurate policy information
-
----
-
-## 🏗️ Architecture
-
-SafeShield uses a **Full-Stack** architecture with three main components:
-
-### Frontend
-- Modern responsive web interface
-- User-friendly policy recommendation flow
-- Integrated chatbot interface
-- Real-time interactions
-
-### Backend (Node.js)
-- Express.js server for API routing
-- Proxy layer to Python ML service
-- File upload handling
-- CORS support for development
-
-### Backend (Python - ML Service)
-- FastAPI for high-performance API
-- Semantic search using FAISS
-- Policy recommendation engine
-- PDF document processing and indexing
-- Sentence transformers for embeddings
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | FastAPI + Postgres + JWT auth + demo login + rate limiting + CI | ✅ Done |
+| 2 | Ingestion: PDF → structure-aware chunks → embeddings → pgvector, in a background worker | ✅ Done |
+| 3 | Hybrid retrieval + LLM synthesis with citations, streamed | ✅ Done |
+| 4 | Evaluation harness + quality regression gate in CI | ✅ Done |
+| 4.5 | Hardening: the gaps an audit of phases 1–4 turned up | ✅ Done |
+| 5 | React frontend | ✅ Done |
+| 6 | Compose + Prometheus/Grafana + deploy | ✅ Done |
+| 7 | Kubernetes manifests + Helm + Terraform | ✅ Done |
 
 ---
 
-## 🚀 Features
+## Architecture
 
-### 1. **Policy Recommender System**
-Intelligent algorithm that:
-- Analyzes user needs and preferences
-- Searches through policy documents
-- Ranks policies by relevance
-- Provides top 3 policy recommendations with relevance scores
-- Shows policy snippets for quick review
+```
+React (Vercel)
+   │ HTTPS + JWT
+   ▼
+FastAPI ─── OpenAI (embeddings + chat)
+   │
+   ├── ARQ worker  ── background document ingestion
+   │
+   ├── Postgres + pgvector  ── users, documents, chunks, embeddings
+   └── Redis  ── job queue + rate limiting
+```
 
-### 2. **Chatbot - Policy Q&A**
-AI-powered chatbot that:
-- Understands natural language queries
-- Searches policy documents for relevant clauses
-- Provides citations and page references
-- Returns structured answers with full text excerpts
-- Handles complex policy-related questions
+**One backend service.** The original project ran two: a Node/Express proxy and
+a separate FastAPI service holding a FAISS index in memory. Both are gone. The
+Node layer was a pass-through with no logic of its own, and the FAISS service
+has been replaced piece by piece — its extraction, chunking and embedding now
+live in `backend/app/rag/`, and its in-process index is a pgvector table.
 
-### 3. **Semantic Search**
-Advanced document search using:
-- Sentence transformers (`all-MiniLM-L6-v2`)
-- FAISS vector database for fast similarity search
-- Intelligent chunking with overlap for better context
-- PDF text extraction and processing
+```
+backend/     the FastAPI service — the only backend
+frontend/    React client — auth, uploads, streamed answers with citations
+datasets/    six public insurer policies used as the shared corpus
+ops/         Prometheus rules, Grafana dashboards, deployment runbook
+deploy/      Helm chart and Terraform for EKS
+scripts/     database bootstrap
+```
 
-### 4. **Document Management**
-- Upload multiple insurance policy PDFs
-- Automatic indexing and embedding
-- Persistent state storage
-- Support for policy documents up to 100MB
+The in-memory FAISS index was also the reason the old service could not scale:
+every replica would have held a different index, so an upload indexed by one pod
+was invisible to the next request. Moving the vectors into Postgres is what makes
+horizontal scaling possible at all.
+
+### Design decisions
+
+**pgvector over a dedicated vector database.** Postgres is already required for
+users and documents. Keeping embeddings in the same database means one datastore
+to run and back up, and transactional consistency between a document row and its
+chunks. A dedicated vector DB wins above ~50M vectors; this project is nowhere
+near that.
+
+**Hybrid retrieval, not pure vector search.** Dense embeddings match on meaning
+but reliably miss exact strings — ask for "clause 4.2.1" and vector search will
+not find clause 4.2.1. Postgres full-text search covers that half, and the two
+ranked lists are fused with Reciprocal Rank Fusion.
+
+**Ingestion runs in a background worker.** Embedding a 200-page policy takes
+minutes. Doing that inside the HTTP request blocks a worker, times out at the
+load balancer, and stalls every other user.
+
+**Refresh tokens are stored server-side.** Pure stateless JWT cannot revoke a
+session — a stolen token stays valid until it expires. Short-lived access tokens
+are paired with a rotating, revocable refresh token; replaying a rotated token
+revokes its entire family.
+
+**psycopg3 over asyncpg.** One driver covers the async application and the
+synchronous Alembic migrations under a single URL scheme, and it avoids a
+compiled-extension load failure seen on some Windows setups.
+
+**Extraction emits typed blocks, not a flat string.** `page.extract_text()`
+interleaves benefit-table cells into surrounding prose, making the numbers
+unrecoverable. Tables are extracted separately as markdown and never split
+across chunks; headings become their own blocks so every chunk can carry a
+section breadcrumb. Running headers and footers are detected by cross-page
+repetition and dropped — left in, the insurer's contact details outweigh the
+policy text in the index.
+
+**The embedding provider is an interface.** A deterministic fake lets CI run the
+full ingestion path — extract, chunk, embed, store, retrieve — with no API key
+and no network. Only the vectors differ.
+
+### Extraction results on the sample corpus
+
+| Document | Pages | Chunks | Median tokens |
+|---|---:|---:|---:|
+| BAJHLIP23020V012223 | 49 | 222 | 132 |
+| CHOTGDP23004V012223 | 101 | 294 | 169 |
+| ICIHLIP22012V012223 | 31 | 147 | 162 |
+| HDFHLIP23024V072223 | 39 | 100 | 177 |
+| HDFC Poorna Suraksha | 31 | 68 | 278 |
+| EDLHLGA23009V012223 | 2 | 7 | 198 |
+| **Total** | | **838** | |
+
+100% of chunks carry a section breadcrumb; none exceed the token cap.
+
+### Why hybrid retrieval — measured, not assumed
+
+Dense and sparse retrieval, run separately over the same 838 chunks with real
+`text-embedding-3-small` vectors. Each column wins queries the other loses:
+
+| Query | Dense (semantic) | Sparse (keyword) |
+|---|---|---|
+| "What happens if I do not make a claim for a year?" | `4. Submit claim` ❌ | `5.1 Cumulative Bonus` ✅ |
+| "Can I claim for an ambulance?" | `7. Air Ambulance` ✅ | `Well Baby Well Mother` ❌ |
+| "Is cataract surgery excluded?" | `SECTION D) EXCLUSIONS` ✅ | `SECTION D) EXCLUSIONS` ✅ |
+| "What is the limit on daily room rent?" | `42. Renewal` ❌ | `3. Must have been prescribed…` ❌ |
+
+Dense handles vocabulary mismatch — "Can I claim for an ambulance?" retrieves
+`7. Air Ambulance` at 0.62 similarity with no shared keyword. Sparse handles the
+inverse: nobody phrases a question as "cumulative bonus", but that is the clause
+that answers it, and only exact matching finds it.
+
+Row four is the honest one: neither method answers it alone.
+
+**After fusion, all four are answered.** Every one of those queries now retrieves
+both dense and sparse hits, and "daily room rent" surfaces *"We will pay the
+amount of rent You…"* — a chunk dense ranked 6th and sparse ranked 1st. Fusing
+them puts it on top.
+
+One subtlety cost real quality before it was caught. Postgres' `plainto_tsquery`
+**ANDs** every term, so "What happens if I do not make a claim for a year?"
+compiles to `happen & make & claim & year` and matches almost nothing — the
+sparse half was silently dead for natural-language questions while looking
+healthy when tested with bare keywords. Rewriting the operators to OR restores
+it; `ts_rank_cd` still ranks by how many and how rare the matched terms are.
+
+### Measuring quality — the evaluation harness
+
+A wrong answer here is a plausible sentence, not a crash, so no unit test
+catches it. `eval/` scores retrieval and answer quality against a golden set of
+30 questions written by reading the source policies — phrased the way a user
+would phrase them ("what happens if I don't claim for a year"), not the way the
+document does ("cumulative bonus"), because that mismatch is the thing retrieval
+has to bridge.
+
+| Metric | Baseline | What it catches |
+|---|---:|---|
+| recall@5 | 84.6% | the answering text never reached the model |
+| MRR | 59.2% | it reached the model, but buried |
+| term accuracy | 50.0% | the answer omits the figure it must state |
+| faithfulness | 78.3% | claims not supported by the retrieved excerpts |
+| refusal accuracy | 90.0% | inventing an answer the corpus cannot support |
+
+**The first version of this harness reported recall@5 of 100%.** It scored a hit
+when any *filename* in the expected list appeared — and with six documents and
+two or three acceptable per question, that is nearly free. Meanwhile the model
+was answering the wrong question entirely: asked what happens after a claim-free
+year, it returned a clause about claim time limits. Scoring on the *answering
+text* instead dropped recall@5 to 84.6% and MRR from 87.8% to
+59.2%.
+
+Those lower numbers are the useful ones. They point at four real retrieval
+misses, which cascade into every answer failure below them — that is the work
+queue, and it did not exist while the metric said everything was fine.
+
+The gate runs in CI as a job the Docker build depends on, because a workflow
+nothing depends on blocks nothing when it goes red. Pull requests are scored on
+retrieval only — no answer generation, so no spend — against the committed
+baseline. The full run including faithfulness judging happens nightly.
+
+Where no API key is available, as on a fork's pull request, embeddings are
+deterministic noise and every ranking metric is meaningless. The previous
+version silently dropped the gate and reported success. It now runs a smoke
+check instead: every answerable question must retrieve *something*. That still
+catches a dead tsv trigger, a broken migration or an empty corpus, and it fails
+rather than passing vacuously.
+
+### What an audit of the first four phases found
+
+Every phase was green — tests passing, CI clean — and eleven real gaps were
+still there. They are worth listing because none of them would have announced
+itself:
+
+**Scoping filtered after retrieval.** Asking a question about one document
+fetched the global top-6 and *then* discarded everything from other documents,
+so a scoped question returned nothing whenever other documents filled the
+ranking — including when the named document contained the answer. The filter is
+now a predicate inside both retrieval CTEs.
+
+**The pgvector test guard never ran.** `skipif(not pgvector_available)` was
+passed the *function*, so `not <function>` was permanently `False` and nothing
+ever skipped; the flag it read was also set inside a fixture that runs after
+collection, so a corrected call would have skipped everything instead. Broken in
+both directions, which is why it looked like it worked.
+
+**Per-user rate limiting was dead.** The key function preferred
+`request.state.user_id`, and nothing ever set it — so every authenticated caller
+shared one IP bucket, exactly what keying by user exists to prevent.
+
+**A missing API key was silent.** Without one the provider fell back to
+deterministic fake vectors, indexed the corpus with noise and marked every
+document `ready`. Production now refuses to start.
+
+**No `.dockerignore`.** `COPY . .` would have baked the local `.env` — real key,
+real database password — into an image layer, where deleting it later does not
+remove it. The image also shipped pytest, ruff and mypy.
+
+**The quality gate did not gate.** It lived in a workflow nothing depended on,
+its path filter missed the config file owning every retrieval knob, and without
+an API key it dropped `--check` and reported success while measuring nothing.
+
+Also: no timeouts on any OpenAI call (inheriting a 600s default by accident),
+`chat_sync` returning a bare 500 on upstream failure, `MAX_PDF_PAGES` declared
+but never enforced, uploads stranded in `pending` forever after a Redis blip,
+and no coverage measurement anywhere.
+
+The lesson worth keeping is that all eleven passed a green test suite. Tests
+prove the paths you thought of still work; they say nothing about the ones you
+never wrote down.
+
+### The frontend
+
+React, TypeScript, Vite, Tailwind and TanStack Query, in `frontend/`. Three
+decisions there are worth stating, because each has a wrong version that looks
+identical until it fails.
+
+**The access token lives in memory, never `localStorage`.** Anything stored
+there is readable by any script that ends up on the page, so one XSS becomes a
+stolen session that outlives the tab. Losing the token on reload is the point —
+the httpOnly refresh cookie restores the session, and the app asks for a new
+access token before deciding whether to show the login screen. Skip that step
+and every reload looks like a logout.
+
+**Concurrent 401s share one refresh.** Refresh tokens rotate, and replaying a
+rotated one is treated as theft: the backend revokes the entire family. A page
+that fires four queries on mount would send four refresh requests the moment the
+token expired and log the user out — a bug that only appears after the access
+token's lifetime, which is exactly long enough for it never to show up while
+you are working on it. All callers await a single in-flight refresh instead.
+
+**Streaming is parsed by hand.** `EventSource` cannot be used — it only issues
+GET requests and cannot set an `Authorization` header, and the chat endpoint is
+an authenticated POST. So the body is read from `fetch` and parsed in
+`src/lib/sse.ts`, which exists because network chunk boundaries have nothing to
+do with message boundaries: one event can arrive split across three reads. Its
+tests cover split events, CRLF endings, comments, keep-alives, and a multi-byte
+character split mid-character.
+
+A failed stream arrives as an in-band `error` event, not an HTTP status,
+because by then the response has already begun — so a failure looks like a
+request that succeeded and stopped early, and watching for that event is the
+only way to tell.
+
+### Monitoring — two dashboards, because they answer different questions
+
+`docker compose up` brings up Prometheus, Grafana with dashboards provisioned
+from `ops/grafana/dashboards/`, and exporters for Postgres and Redis. Nothing to
+click.
+
+**Service health** is the usual thing: rate, errors, duration, saturation. It
+answers "is it up and fast".
+
+**RAG quality and cost** answers "is it any *good*", which the first cannot see
+at all. A pipeline that retrieves nothing, refuses every question and returns
+200 in 40ms looks perfect on a service dashboard. So there are metrics for
+refusal rate, time to first token, median chunks retrieved, the fused RRF score
+of the best match, and token spend split by prompt, completion and embedding.
+
+The panel that justifies the whole exercise is **which retriever found the
+results**. When `plainto_tsquery` was ANDing every term, the lexical half was
+dead for natural-language questions — and latency, error rate and throughput
+were all perfect throughout. Nothing but a metric like that would have shown it.
+There is an alert on the same condition:
+
+```promql
+sum(rate(safeshield_retrieval_contributors_total{source=~"sparse|both"}[15m])) == 0
+  and sum(rate(safeshield_retrieval_contributors_total[15m])) > 0
+```
+
+Token spend is the other one worth having. This project runs on a budget under
+$10/month, and a scripted loop can spend that in an afternoon; without a metric
+the first sign is the invoice.
+
+Every log line is JSON carrying a `request_id`, and the same id comes back in
+`X-Request-ID` — a user reporting "it failed" hands you the key to find it.
+`/api/health` stays shallow liveness while `/api/ready` actually checks Postgres
+and Redis, because wiring a database check into liveness means a brief blip
+restarts every replica at once.
+
+Operational procedures — deploying, and what to check when answers go wrong,
+uploads stall or spend spikes — are in [`ops/RUNBOOK.md`](ops/RUNBOOK.md).
+
+### Kubernetes and AWS
+
+`deploy/terraform` builds a VPC, EKS, RDS Postgres 16, ElastiCache Redis, S3,
+ECR and two IRSA roles. `deploy/helm/safeshield` deploys onto it: API and worker
+deployments, migration hook, service, ingress, HPA, PDB, ServiceMonitors and
+network policies.
+
+**Building this forced a real application change.** The runbook already noted
+that two things break above one replica, and a chart defaulting to two replicas
+would have shipped both:
+
+- **Uploads were written to a container-local directory.** With two API pods and
+  a worker as a third process, a file written by one is invisible to the others
+  and ingestion fails with a missing file — only under the horizontal scaling
+  the chart exists for. Storage is now an interface, the same shape as the
+  embedding provider: local disk for development, S3 in the cluster. The read
+  side is a context manager, because extraction needs a real path and a remote
+  object has to be materialised first.
+- **Migrations ran in the API's start command**, which is a race the moment two
+  pods start together. They are now a `pre-upgrade` hook that must complete
+  before any new pod starts.
+
+A few other decisions worth naming. `image.tag` has no default and the chart
+**refuses to render** without one — `latest` makes a rollout unreproducible and
+a rollback meaningless, since the tag has already moved to the thing you are
+rolling back from; CI asserts that this guard still fails. Liveness points at
+`/api/health` and readiness at `/api/ready`, because a liveness probe that
+touches Postgres turns a brief database blip into every replica restarting at
+once. The worker uses `Recreate` rather than a rolling update, since overlapping
+pods would have two workers competing over the same queue while one is being
+torn down. And IRSA replaces static AWS keys, so there is no long-lived
+credential in a Secret to rotate or leak.
+
+The frontend is hosted separately — a private S3 bucket behind CloudFront in
+`deploy/terraform-frontend`, kept apart from the backend because the two have
+opposite lifecycles. The site stays up permanently; the backend is brought up
+per session and torn down after.
+
+**On-demand, because always-on is ~$210/month.** `deploy/scripts/up.sh` and
+`down.sh` wrap the whole cycle — up provisions, builds and pushes the image,
+installs the chart, re-seeds the corpus and publishes the frontend; down
+uninstalls, destroys, and then **verifies against the AWS API that nothing was
+left running**, because a half-failed teardown leaving a NAT gateway up is how
+an on-demand stack actually produces a surprise bill. Hourly this is about
+$0.28, so a demo session is around a dollar.
+
+**What is verified, and what is not.** The chart lints, renders 14 resources,
+and all 14 validate against the Kubernetes 1.30 schema including the
+ServiceMonitor CRDs. Both Terraform modules are formatted, initialise against
+the real AWS provider and modules, and validate; the deploy scripts pass
+shellcheck. CI runs the chart and Terraform checks. None of it has been applied
+to a live cluster or a real AWS account — the first apply is a deliberate act.
+
+### A free tier, from the same code
+
+The EKS deployment demonstrates the scalable design; it also needs a paid AWS
+account. `render.yaml` and [`docs/DEPLOY-FREE.md`](docs/DEPLOY-FREE.md) are the
+other end of the spectrum — a free hybrid at zero hosting cost: the frontend on
+S3 + CloudFront (the same `deploy/terraform-frontend`, both free-tier eligible),
+the backend on a single Render web service built from GitHub, and Neon for
+Postgres. No Redis.
+
+The one thing that made this possible without a code fork is a single switch.
+`REDIS_ENABLED=false` folds the two extra moving parts into the web process:
+rate limiting keeps its counters in memory (correct on one instance — there is
+nothing to share state across), and document ingestion runs as a background task
+in the API rather than being handed to the ARQ worker. Everything else — the
+image, the endpoints, the RAG pipeline — is byte-for-byte the same. It is the
+storage-interface lesson again: the deployment shape is configuration, not a
+different application.
 
 ---
 
-## 📦 Tech Stack
+## Running locally
 
-| Component | Technology |
-|-----------|-----------|
-| **Frontend** | HTML/CSS/JavaScript |
-| **Backend (API)** | Node.js, Express.js |
-| **Backend (ML)** | Python, FastAPI |
-| **ML Libraries** | SentenceTransformers, FAISS, PDFPlumber |
-| **Utilities** | Multer, Axios, Fetch API |
-| **Development** | Nodemon, Morgan (logging) |
-
----
-
-## ⚙️ Setup & Installation
-
-### Prerequisites
-- Node.js (v18+) and npm
-- Python 3.8+
-- pip
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com/Baghel004/SafeShield.git
-cd SafeShield
-```
-
-### 2. Backend Setup (Node.js)
-
-#### Step 1: Navigate to Backend Directory
-```bash
-cd backend
-```
-
-#### Step 2: Install Dependencies
-```bash
-npm install
-```
-
-This will install all required packages:
-- **express** (v5.1.0) - Web framework for routing and middleware
-- **cors** (v2.8.5) - Cross-Origin Resource Sharing support
-- **multer** (v2.0.2) - File upload middleware
-- **axios** (v1.12.2) - HTTP client for making requests
-- **morgan** (v1.10.1) - HTTP request logger
-- **form-data** (v4.0.4) - Multipart form data handling
-- **node-fetch** (v3.3.2) - Fetch API for Node.js (fallback)
-- **undici** (v7.16.0) - HTTP client (fallback for older Node versions)
-
-#### Step 3: Start the Server
-```bash
-npm start
-```
-
-The server will start and output:
-```
-Node server running: http://localhost:3000 (proxy -> http://127.0.0.1:8000)
-```
-
-#### Step 4: Verify Server is Running
-```bash
-curl http://localhost:3000/api/health
-```
-
-Expected response:
-```json
-{
-  "status": "ok",
-  "upstream": "http://127.0.0.1:8000"
-}
-```
-
-#### Backend Server Details
-
-**Port:** 3000 (configurable via `PORT` environment variable)
-
-**Key Features:**
-- Serves frontend static files from `../frontend` directory
-- Proxies API requests to Python backend at `http://127.0.0.1:8000`
-- Handles file uploads with multipart/form-data
-- Includes CORS middleware for development
-- Request logging with Morgan
-- Custom error handling and timeout management
-
-**Server Configuration:**
-- JSON payload limit: 5MB
-- Header timeout: 300 seconds
-- Keep-alive timeout: 65 seconds
-- Request timeout: Unlimited (for long-running operations)
-
-**Upload Directory:** `backend/uploads/`
-- Created automatically on first upload
-- Temporary files cleaned up after processing
-- Max file size: 100MB (limited by upstream Python service)
-
-#### Environment Variables
-```bash
-export PORT=3000                    # Server port (default: 3000)
-export PY_URL=http://127.0.0.1:8000 # Python service URL (default: http://127.0.0.1:8000)
-```
-
-#### Development Mode (with Auto-restart)
-```bash
-npm install -g nodemon              # Install nodemon globally (optional)
-npx nodemon server.js               # Or use nodemon directly
-```
-
-The server will automatically restart on file changes.
-
-#### Troubleshooting Backend
-
-**Port already in use:**
-```bash
-# Find process using port 3000
-lsof -i :3000
-
-# Kill the process
-kill -9 <PID>
-
-# Or use a different port
-PORT=3001 npm start
-```
-
-**Cannot connect to Python service:**
-- Verify Python service is running on port 8000
-- Check firewall settings
-- Update `PY_URL` environment variable if needed
-
-**File upload fails:**
-```bash
-# Ensure uploads directory exists and has write permissions
-mkdir -p backend/uploads
-chmod 755 backend/uploads
-```
-
-**Module not found errors:**
-```bash
-# Clear node_modules and reinstall
-rm -rf node_modules package-lock.json
-npm install
-```
-
-#### API Routes Available
-
-After starting the backend, the following routes are available:
-
-1. **Health Check**
-   ```bash
-   GET /api/health
-   ```
-
-2. **Build Index**
-   ```bash
-   POST /api/build
-   Content-Type: application/json
-   
-   {
-     "pdf_paths": [
-       "/path/to/policy1.pdf",
-       "/path/to/policy2.pdf"
-     ]
-   }
-   ```
-
-3. **Query Policies**
-   ```bash
-   POST /api/query
-   Content-Type: application/json
-   
-   {
-     "q": "What is the coverage limit?",
-     "k": 8
-   }
-   ```
-
-4. **Get Recommendations**
-   ```bash
-   POST /api/recommend
-   Content-Type: application/json
-   
-   {
-     "need": "I need comprehensive health coverage",
-     "top_n": 3
-   }
-   ```
-
-5. **Upload Policy Document**
-   ```bash
-   POST /api/upload
-   Content-Type: multipart/form-data
-   
-   file: <your-policy.pdf>
-   ```
-
-6. **Serve Frontend**
-   ```bash
-   GET /
-   GET /index.html
-   ```
-
----
-
-### 3. Backend Setup (Python ML Service)
-
-#### Step 1: Navigate to Python Backend
-```bash
-cd ../backend-python
-```
-
-#### Step 2: Create Virtual Environment
-```bash
-python -m venv venv
-```
-
-#### Step 3: Activate Virtual Environment
-
-**On Linux/macOS:**
-```bash
-source venv/bin/activate
-```
-
-**On Windows:**
-```bash
-venv\Scripts\activate
-```
-
-#### Step 4: Install Dependencies
-```bash
-pip install fastapi uvicorn pydantic
-pip install sentence-transformers faiss-cpu pdfplumber nltk
-```
-
-Or use the comprehensive requirements:
-```bash
-pip install fastapi==0.104.1 uvicorn==0.24.0
-pip install sentence-transformers==2.2.2 faiss-cpu==1.7.4
-pip install pdfplumber==0.10.3 nltk==3.8.1
-```
-
-#### Step 5: Start the Service
-```bash
-uvicorn app:app --reload --port 8000
-```
-
-The service will start and output:
-```
-INFO:     Uvicorn running on http://127.0.0.1:8000
-INFO:     Application startup complete
-```
-
-#### Step 6: Verify Service is Running
-```bash
-curl http://localhost:8000/health
-```
-
-Expected response:
-```json
-{
-  "status": "ok",
-  "model_loaded": false
-}
-```
-
----
-
-### 4. Frontend
-The frontend is served by the Node.js backend from the `frontend` directory.
-Access the application at `http://localhost:3000`
-
----
-
-## 📡 API Endpoints
-
-### Node.js Backend
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/health` | GET | Health check |
-| `/api/build` | POST | Build/rebuild the search index |
-| `/api/query` | POST | Query policies with natural language |
-| `/api/recommend` | POST | Get policy recommendations |
-| `/api/upload` | POST | Upload new policy documents |
-
-### Python ML Service
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/health` | GET | Service health status |
-| `/build` | POST | Build index from PDF paths |
-| `/query` | POST | Query indexed policies |
-| `/recommend` | POST | Get policy recommendations |
-| `/upload` | POST | Upload and index new policies |
-
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-**Node.js Backend** (`backend/`):
-```env
-PORT=3000                           # Server port
-PY_URL=http://127.0.0.1:8000       # Python service URL
-```
-
-**Python Backend** (`backend-python/`):
-```env
-# Default configuration in app.py
-MODEL_NAME="all-MiniLM-L6-v2"       # Sentence transformer model
-CHUNK_SIZE=1200                     # PDF chunk size
-CHUNK_OVERLAP=300                   # Overlap between chunks
-TOP_K=8                             # Top results for queries
-```
-
----
-
-## 🗂️ Project Structure
-
-```
-SafeShield/
-├── frontend/                    # Frontend web application
-│   └── ...
-├── backend/                     # Node.js API server
-│   ├── server.js               # Main server file
-│   ├── package.json            # Dependencies
-│   └── uploads/                # Temporary upload directory
-├── backend-python/             # Python ML service
-│   ├── app.py                  # FastAPI application
-│   ├── venv/                   # Virtual environment
-│   └── persist/                # Persisted index & corpus
-├── datasets/                   # Sample policy PDFs
-├── train_datasets.js           # Script to build initial index
-└── .gitignore                  # Git ignore rules
-```
-
----
-
-## 📊 How It Works
-
-### Policy Recommendation Flow
-1. User submits their insurance need
-2. ML service encodes the user's query into a vector
-3. FAISS searches for most similar policy chunks
-4. Algorithm ranks policies by relevance score
-5. Top 3 policies returned with snippets
-
-### Chatbot Q&A Flow
-1. User asks a policy question
-2. Query is encoded into embedding
-3. FAISS retrieves top 8 relevant chunks
-4. System synthesizes answer with citations
-5. Response includes excerpts and page references
-
-### Document Indexing
-1. PDF files are uploaded or specified
-2. PDFPlumber extracts text from each page
-3. Text is split into overlapping chunks (1200 chars, 300 char overlap)
-4. Chunks are encoded using SentenceTransformers
-5. Embeddings added to FAISS index
-6. State (corpus + index) persisted to disk
-
----
-
-## 🚀 Building Initial Index
-
-Use the provided script to build the index with sample datasets:
+### With Docker (recommended)
 
 ```bash
-npm install (if needed)
-node train_datasets.js
+cp .env.example .env    # repo root — compose only reads a .env beside itself
+docker compose up
 ```
 
-This script:
-- Sends PDF paths to the `/api/build` endpoint
-- Processes multiple policy documents
-- Creates searchable index
-- Handles long-running requests with generous timeouts
+`backend/.env` is for running the API directly with `python run.py`; compose
+does not read it. Getting that wrong is quiet rather than loud — without a key
+the app falls back to deterministic fake embeddings, so the corpus indexes
+cleanly, every document reports `ready`, and retrieval returns noise.
 
----
+| Service | URL |
+|---|---|
+| API (docs at `/docs`) | <http://localhost:8000> |
+| Grafana (`admin`/`admin`) | <http://localhost:3001> |
+| Prometheus | <http://localhost:9090> |
 
-## 📝 Example Usage
+Then index the sample policies, or every question refuses:
 
-### Query Endpoint
 ```bash
-curl -X POST http://localhost:3000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"q": "What are the coverage limits?"}'
+docker compose exec api python scripts/seed_corpus.py
 ```
 
-**Response:**
-```json
-{
-  "answer": "Coverage limits are specified in Section 2...",
-  "refs": [
-    {
-      "policy": "policy.pdf",
-      "page": 3,
-      "score": 0.892,
-      "excerpt": "Coverage limits..."
-    }
-  ],
-  "full_texts": [
-    {
-      "policy": "policy.pdf",
-      "page": 3,
-      "full_text": "...",
-      "clause_found": true,
-      "clause_text": "Clause 2.1: Coverage limits are..."
-    }
-  ]
-}
-```
+For production, `docker-compose.prod.yml` overlays the development defaults —
+it removes the source bind-mount, turns off `DEBUG` and `RELOAD`, switches to
+JSON logs, and unpublishes Postgres, Redis, Prometheus and Grafana. See
+[`ops/RUNBOOK.md`](ops/RUNBOOK.md).
 
-### Recommend Endpoint
-```bash
-curl -X POST http://localhost:3000/api/recommend \
-  -H "Content-Type: application/json" \
-  -d '{"need": "I need comprehensive health coverage for my family"}'
-```
+### Without Docker
 
-**Response:**
-```json
-{
-  "recs": [
-    {
-      "rank": 1,
-      "policy": "health_policy.pdf",
-      "score": 0.876,
-      "snips": ["Family coverage with comprehensive benefits...", "Premium rates from..."]
-    }
-  ]
-}
-```
+Requires Python 3.12+ and a PostgreSQL 16+ instance with the `pgvector`
+extension.
 
----
-
-## 🔐 Security Features
-
-- File upload size limit: 100MB
-- CORS support for development
-- Request timeout handling
-- Error sanitization in API responses
-- Safe JSON parsing with fallbacks
-
----
-
-## 📈 Performance
-
-- **Embedding Model**: all-MiniLM-L6-v2 (22M parameters, fast)
-- **Vector Search**: FAISS IndexFlatIP (inner product similarity)
-- **Chunk Processing**: Overlapping chunks for context preservation
-- **Persistence**: Automatic state saving/loading
-- **Concurrency**: Thread-safe operations with locks
-
----
-
-## 🛠️ Development
-
-### Running in Development Mode
-
-**Terminal 1 - Python Backend:**
-```bash
-cd backend-python
-source venv/bin/activate
-uvicorn app:app --reload --port 8000
-```
-
-**Terminal 2 - Node.js Backend:**
 ```bash
 cd backend
-npm install
-npm start
+python -m venv .venv && .venv/Scripts/activate   # Windows
+pip install -e ".[dev]"
+
+cp .env.example .env    # point DATABASE_URL at your Postgres
+alembic upgrade head
+python run.py           # API   (RELOAD=true for auto-reload)
+python worker.py        # background ingestion worker, in another shell
+
+python scripts/seed_corpus.py   # index the sample policies
 ```
 
-**Terminal 3 - Build Index (Optional):**
+Then the frontend, in another shell:
+
 ```bash
-node train_datasets.js
+cd frontend
+npm install
+npm run dev             # http://localhost:5173
 ```
 
-Then access the application at `http://localhost:3000`
+It proxies `/api` to the backend so the browser sees one origin — without that
+the refresh cookie is not sent and sessions fail to restore on reload while
+everything else appears to work. See `frontend/README.md`.
+
+Use `run.py` and `worker.py` rather than invoking `uvicorn` or `arq` directly.
+Both build their event loop before anything else, because on Windows the default
+is a `ProactorEventLoop` and psycopg3 cannot run on it — the worker in particular
+would start, accept jobs, and then fail every one at the first query. They are
+no-ops on Linux and macOS, so the same commands work everywhere.
+
+A local Postgres already on 5432 will shadow the compose container silently; set
+`POSTGRES_PORT` to move it.
+
+### Tests
+
+Tests run against a real Postgres — mocking the database hides the bugs that
+actually happen.
+
+```bash
+createdb safeshield_test          # once
+cd backend && pytest -v
+```
 
 ---
 
-## 🐛 Troubleshooting
+## API
 
-### Common Issues
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/register` | — | Create an account |
+| POST | `/api/auth/login` | — | Access token + refresh cookie |
+| POST | `/api/auth/demo` | — | One-click sign-in to the demo account |
+| POST | `/api/auth/refresh` | cookie | Rotate tokens |
+| POST | `/api/auth/logout` | cookie | Revoke the session family |
+| GET | `/api/auth/me` | Bearer | Current user |
+| POST | `/api/chat` | Bearer | Ask a question → SSE stream of the answer |
+| POST | `/api/chat/sync` | Bearer | Same, non-streaming (tests / eval harness) |
+| POST | `/api/documents` | Bearer | Upload a PDF → `202`, ingested in background |
+| GET | `/api/documents` | Bearer | Own documents + shared corpus |
+| GET | `/api/documents/{id}` | Bearer | Poll ingestion status |
+| DELETE | `/api/documents/{id}` | Bearer | Delete own document (+ chunks, + file) |
+| GET | `/api/health` | — | Liveness |
 
-**Python service not reachable:**
-- Ensure Python service is running on port 8000
-- Check `PY_URL` environment variable
-
-**File upload fails:**
-- Verify upload directory has write permissions
-- Check file size is under 100MB
-
-**Index not building:**
-- Verify PDF paths exist in `train_datasets.js`
-- Check Python service logs for PDF parsing errors
-
-**Model not loading:**
-- First time loading takes time (downloads embeddings model)
-- Requires internet connection for model download
-
----
-
-## 📚 Dependencies
-
-### Backend (Node.js)
-- express: Web framework
-- multer: File upload handling
-- axios: HTTP client
-- cors: Cross-origin support
-- morgan: Request logging
-- form-data: Multipart form handling
-
-### Backend (Python)
-- fastapi: Web framework
-- pydantic: Data validation
-- sentence-transformers: Embedding generation
-- faiss-cpu: Vector search
-- pdfplumber: PDF text extraction
-- nltk: Natural language toolkit
+Access tokens go in the response body and belong in memory on the client.
+The refresh token is an httpOnly cookie and is never readable from JavaScript.
 
 ---
 
-## 🤝 Contributing
+## Tech stack
 
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a pull request
-
----
-
-## 📄 License
-
-This project is open source and available under the ISC License.
+| Layer | Choice |
+|---|---|
+| API | FastAPI, Pydantic v2, Uvicorn |
+| Database | PostgreSQL 17 + pgvector, SQLAlchemy 2 (async), Alembic |
+| Queue | Redis + ARQ |
+| Auth | Argon2id, PyJWT, rotating refresh tokens |
+| RAG | pdfplumber, OpenAI `text-embedding-3-small`, `gpt-4o-mini` |
+| Frontend | React, Vite, TypeScript, Tailwind, TanStack Query |
+| Quality | pytest, ruff, mypy (strict), GitHub Actions |
+| Ops | Docker Compose, Prometheus, Grafana, structured logging |
 
 ---
 
-## 👨‍💻 Author
+## License
 
-**Baghel004** - [GitHub Profile](https://github.com/Baghel004)
-
----
-
-## 📞 Support
-
-For issues, questions, or suggestions, please open an [GitHub Issue](https://github.com/Baghel004/SafeShield/issues).
-
----
-
-## 🎯 Roadmap
-
-- [ ] User authentication and profiles
-- [ ] Payment integration
-- [ ] Admin dashboard for policy management
-- [ ] Advanced analytics
-- [ ] Mobile app
-- [ ] Multi-language support
-- [ ] Real-time policy comparison
-- [ ] Customer reviews and ratings
-
----
-
-**Made with ❤️ for insurance innovation**
+MIT

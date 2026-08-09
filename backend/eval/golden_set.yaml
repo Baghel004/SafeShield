@@ -1,0 +1,245 @@
+# Golden set for retrieval and answer quality.
+#
+# Every case was written by reading the source documents, not generated from the
+# chunks. That matters: a question generated from a chunk reuses its wording, so
+# retrieval finds it trivially and the score flatters the system. These are
+# phrased the way someone with a policy question would actually phrase them —
+# "what happens if I don't claim for a year", not "cumulative bonus" — which is
+# precisely the vocabulary mismatch retrieval has to bridge.
+#
+# Fields:
+#   question       what the user asks
+#   expect_terms   strings that must appear in a correct answer (usually the
+#                  figure). Matched case-insensitively.
+#   expect_sources documents any of which retrieval should surface. Pages are a
+#                  hint for humans; scoring is per document, because the same
+#                  clause legitimately appears on several pages and across
+#                  insurers.
+#   should_refuse  true when the corpus cannot answer it and the correct
+#                  behaviour is to say so.
+#   note           why this case exists, where it is not obvious.
+
+# ---------------------------------------------------------------- waiting periods
+- id: waiting-initial-30-day
+  question: "If I just bought the policy, how soon can I claim for an illness?"
+  expect_content:
+    - "30 days from the first policy commencement"
+  expect_terms: ["30 days"]
+  expect_sources: [HDFHLIP23024V072223.pdf, BAJHLIP23020V012223.pdf]
+  note: User says "how soon can I claim"; the document says "30-day waiting period".
+
+- id: waiting-specified-disease
+  question: "Is there a waiting period before listed conditions like hernia or cataract are covered?"
+  expect_content:
+    - "expiry of 24 months of continuous coverage"
+  expect_terms: ["24 months"]
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf]
+
+- id: waiting-pre-existing
+  question: "I was diagnosed with diabetes before taking the policy. How is that treated?"
+  expect_content:
+    - "pre-existing disease"
+  expect_terms: []
+  expect_sources: [CHOTGDP23004V012223.pdf, BAJHLIP23020V012223.pdf]
+  note: Tests that "diagnosed before taking the policy" retrieves the pre-existing disease definition.
+
+- id: waiting-maternity
+  question: "How long must I hold the policy before maternity expenses are payable?"
+  expect_content:
+    - "maternity expenses"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf]
+  note: Figure varies by plan, so only the source is scored — asserting one number would be wrong.
+
+# ---------------------------------------------------------------- benefits
+- id: bonus-claim-free-year
+  question: "What happens if I do not make any claim for a whole year?"
+  expect_content:
+    - "cumulative bonus"
+  expect_terms: ["10%"]
+  expect_sources: [HDFHLIP23024V072223.pdf, ICIHLIP22012V012223.pdf]
+  note: The answering clause is "Cumulative Bonus" — a term no user would type. Sparse-only retrieval finds this; dense alone does not.
+
+- id: ambulance-road
+  question: "Can I claim the cost of an ambulance?"
+  expect_content:
+    - "road ambulance"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, EDLHLGA23009V012223.pdf, ICIHLIP22012V012223.pdf]
+
+- id: ambulance-air
+  question: "Is air ambulance or helicopter transport covered in an emergency?"
+  expect_content:
+    - "air ambulance"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, EDLHLGA23009V012223.pdf, ICIHLIP22012V012223.pdf]
+
+- id: pre-hospitalisation
+  question: "Are doctor visits and tests before I am admitted to hospital paid for?"
+  expect_content:
+    - "pre-hospitalization medical expenses"
+  expect_terms: ["60"]
+  expect_sources: [ICIHLIP22012V012223.pdf]
+
+- id: organ-donor
+  question: "If someone donates an organ to me, are their hospital costs covered?"
+  expect_content:
+    - "organ donor"
+  expect_terms: []
+  expect_sources: [ICIHLIP22012V012223.pdf, BAJHLIP23020V012223.pdf]
+
+- id: health-checkup
+  question: "Do I get a free health check-up if I stay with the policy?"
+  expect_content:
+    - "preventive health check"
+  expect_terms: []
+  expect_sources: [HDFHLIP23024V072223.pdf, ICIHLIP22012V012223.pdf]
+
+- id: day-care
+  question: "Is a procedure that does not need an overnight stay covered?"
+  expect_content:
+    - "day care procedures"
+    - "day care treatment"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf]
+
+- id: room-rent
+  question: "Is there a cap on the daily hospital room rent I can claim?"
+  expect_content:
+    - "room rent"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, ICIHLIP22012V012223.pdf, HDFHLIP23024V072223.pdf]
+  note: Neither retriever answered this alone before RRF fusion. Kept as a regression guard.
+
+# ---------------------------------------------------------------- exclusions
+- id: exclusion-cataract
+  question: "Is cataract treatment excluded from cover?"
+  expect_content:
+    - "cataract"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf]
+  note: >
+    A live failure mode. Cataract is a specified condition with a waiting
+    period, not a permanent exclusion, and the model has previously answered
+    "excluded" outright. Faithfulness scoring is what catches that.
+
+- id: exclusion-cosmetic
+  question: "Would a cosmetic or plastic surgery be paid for?"
+  expect_content:
+    - "cosmetic surgery"
+    - "plastic surgery"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, CHOTGDP23004V012223.pdf, HDFHLIP23024V072223.pdf]
+
+- id: exclusion-war
+  question: "Am I covered if I am injured during a war or civil unrest?"
+  expect_content:
+    - "act of foreign enemy"
+    - "war, invasion"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, CHOTGDP23004V012223.pdf, HDFHLIP23024V072223.pdf]
+
+# ---------------------------------------------------------------- policy admin
+- id: freelook-period
+  question: "I changed my mind right after buying. Can I cancel and get my money back?"
+  expect_content:
+    - "free look"
+  expect_terms: ["15"]
+  expect_sources: [BAJHLIP23020V012223.pdf]
+  note: The clause is "Free Look Period"; the user never uses that phrase.
+
+- id: claim-deadline
+  question: "How quickly do I have to tell you about a claim?"
+  expect_content:
+    - "claim intimation"
+    - "no later than 30 days"
+    - "within 30 days"
+  expect_terms: ["30 days"]
+  expect_sources: [BAJHLIP23020V012223.pdf, CHOTGDP23004V012223.pdf]
+
+- id: renewal-grace
+  question: "What if I miss the renewal date by a few days?"
+  expect_content:
+    - "grace period"
+  expect_terms: []
+  expect_sources: [CHOTGDP23004V012223.pdf, HDFHLIP23024V072223.pdf, ICIHLIP22012V012223.pdf]
+
+- id: claim-documents
+  question: "What paperwork do I need to submit with a reimbursement claim?"
+  expect_content:
+    - "claim form"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, CHOTGDP23004V012223.pdf, ICIHLIP22012V012223.pdf]
+
+- id: cashless-hospital
+  question: "How does cashless treatment at a network hospital work?"
+  expect_content:
+    - "cashless facility"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, ICIHLIP22012V012223.pdf, CHOTGDP23004V012223.pdf]
+
+- id: grievance
+  question: "Who do I complain to if my claim is rejected unfairly?"
+  expect_content:
+    - "ombudsman"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf, ICIHLIP22012V012223.pdf]
+
+# ---------------------------------------------------------------- definitions
+- id: define-hospital
+  question: "What counts as a hospital under this policy?"
+  expect_content:
+    - "hospital means"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf, CHOTGDP23004V012223.pdf]
+
+- id: define-accident
+  question: "How does the policy define an accident?"
+  expect_content:
+    - "accident means"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf, CHOTGDP23004V012223.pdf]
+
+- id: define-ayush
+  question: "Is ayurvedic or homeopathic treatment covered?"
+  expect_content:
+    - "ayush"
+  expect_terms: []
+  expect_sources: [BAJHLIP23020V012223.pdf, HDFHLIP23024V072223.pdf, ICIHLIP22012V012223.pdf]
+
+# ---------------------------------------------------------------- travel / group
+- id: travel-baggage
+  question: "What if my checked-in baggage is lost on a trip?"
+  expect_content:
+    - "checked-in baggage"
+    - "baggage"
+  expect_terms: []
+  expect_sources: [CHOTGDP23004V012223.pdf]
+
+- id: travel-trip-cancel
+  question: "Can I claim if I have to cancel my trip?"
+  expect_content:
+    - "trip cancellation"
+  expect_terms: []
+  expect_sources: [CHOTGDP23004V012223.pdf]
+
+# ---------------------------------------------------------------- must refuse
+# The corpus cannot answer these. Refusing is the correct behaviour, and a
+# confident invented answer is the single worst failure this system can produce.
+- id: refuse-capital-of-france
+  question: "What is the capital city of France?"
+  should_refuse: true
+
+- id: refuse-stock-advice
+  question: "Which technology stocks should I buy this quarter?"
+  should_refuse: true
+
+- id: refuse-car-insurance
+  question: "What is the no-claim bonus on my Honda City car insurance policy?"
+  should_refuse: true
+  note: Plausibly insurance-shaped, but these are health and travel policies. Topic adjacency must not be mistaken for coverage.
+
+- id: refuse-my-premium
+  question: "How much is my monthly premium and when is it due?"
+  should_refuse: true
+  note: Policy wordings contain no individual customer data. Answering would mean inventing it.
